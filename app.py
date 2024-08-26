@@ -48,7 +48,7 @@ def get_brain_bee_question():
     lines = response_text.split('\n')
     
     question = lines[0].replace("Question: ", "").strip()
-    choices = [line.replace("Option ", "").strip() for line in lines[2:6]]
+    choices = [line.replace("Option ", "").strip() for line in lines[3:7]]
     correct_answer = lines[6].replace("Correct Answer: ", "").strip()
     explanation = lines[7].replace("Explanation: ", "").strip()
 
