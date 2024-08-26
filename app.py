@@ -22,17 +22,19 @@ quiz_state = {
 }
 
 def get_brain_bee_question():
-    prompt = ("Provide a difficult Brain Bee style question asking about a hypothetical situation with four multiple-choice options. "
-              "Include the correct answer and an explanation for the answer. "
-              "Format the output as follows:\n"
-              "Question: [Question Text]\n"
-              "Options:\n"
-              "Option A: [Option A Text]\n"
-              "Option B: [Option B Text]\n"
-              "Option C: [Option C Text]\n"
-              "Option D: [Option D Text]\n"
-              "Correct Answer: [A/B/C/D]\n"
-              "Explanation: [Explanation Text]")
+    prompt = (
+        "Provide a difficult Brain Bee style question asking about a hypothetical situation with four multiple-choice options. "
+        "Include the correct answer and an explanation for the answer. "
+        "Format the output as follows:\n"
+        "Question: [Question Text]\n"
+        "Options:\n"
+        "Option A: [Option A Text]\n"
+        "Option B: [Option B Text]\n"
+        "Option C: [Option C Text]\n"
+        "Option D: [Option D Text]\n"
+        "Correct Answer: [A/B/C/D]\n"
+        "Explanation: [Explanation Text]"
+    )
 
     response = openai.ChatCompletion.create(
         engine='gpt-4o',  # Specify the Azure engine name for GPT-4
@@ -43,14 +45,30 @@ def get_brain_bee_question():
         temperature=0.7,  # Set temperature for creativity
         top_p=0.9,        # Set top_p for diversity control
     )
-    
+
     response_text = response.choices[0].message['content'].strip()
     lines = response_text.split('\n')
     
-    question = lines[0].replace("Question: ", "").strip()
-    choices = [line.replace("Option ", "").strip() for line in lines[3:7]]
-    correct_answer = lines[6].replace("Correct Answer: ", "").strip()
-    explanation = lines[7].replace("Explanation: ", "").strip()
+    # Initialize placeholders
+    question = ""
+    choices = []
+    correct_answer = ""
+    explanation = ""
+
+    # Parsing logic with checks
+    for line in lines:
+        if line.startswith("Question: "):
+            question = line.replace("Question: ", "").strip()
+        elif line.startswith("Option A: ") or line.startswith("Option B: ") or \
+             line.startswith("Option C: ") or line.startswith("Option D: "):
+            choices.append(line.strip())
+        elif line.startswith("Correct Answer: "):
+            correct_answer = line.replace("Correct Answer: ", "").strip().upper()
+        elif line.startswith("Explanation: "):
+            explanation = line.replace("Explanation: ", "").strip()
+
+    if len(choices) != 4:
+        raise ValueError("Failed to parse all four options.")
 
     return question, choices, correct_answer, explanation
 
@@ -69,7 +87,7 @@ def index():
 def update():
     global quiz_state
 
-    user_answer = request.form.get('answer')
+    user_answer = request.form.get('answer').strip().upper()
     quiz_state['user_answer'] = user_answer
 
     if user_answer == quiz_state['correct_answer']:
