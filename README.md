@@ -5,6 +5,7 @@ This Flask-based web application utilizes the OpenAI ChatGPT API to generate cha
 
 **Features**
 Generate Brain Bee Questions: Requests Brain Bee-style questions with multiple-choice options and explanations from the ChatGPT API.
+
 Interactive Quiz: Users can answer questions and receive immediate feedback on their responses.
 History Tracking: Keeps track of past questions and user answers for review.
 
