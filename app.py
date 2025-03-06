@@ -4,13 +4,12 @@ import os
 
 app = Flask(__name__)
 
-# Configure OpenAI to use Azure
 openai.api_type = "azure"
-openai.api_base = os.getenv("AZURE_OPENAI_ENDPOINT")  # The endpoint URL
-openai.api_key = os.getenv("AZURE_OPENAI_API_KEY")    # The API key
-openai.api_version = "2024-02-15-preview"  # The API version
+openai.api_base = os.getenv("AZURE_OPENAI_ENDPOINT") 
+openai.api_key = os.getenv("AZURE_OPENAI_API_KEY") 
+openai.api_version = "2024-02-15-preview" 
 
-# Global state to manage quiz state and history
+
 quiz_state = {
     'question': '',
     'choices': [],
@@ -18,12 +17,13 @@ quiz_state = {
     'explanation': '',
     'user_answer': None,
     'feedback': '',
-    'history': []  # Add history to track user responses
+    'history': []
 }
 
-def get_brain_bee_question():
+
+def get_brain_bee_question(category):
     prompt = (
-        "Provide a difficult Brain Bee style question asking about a hypothetical situation with four multiple-choice options. "
+        "Based on the neuroscience information about " + category + " you have been fed in, provide a difficult Brain Bee style question asking about a hypothetical situation with four multiple-choice options. "
         "Include the correct answer and an explanation for the answer. "
         "Format the output as follows:\n"
         "Question: [Question Text]\n"
@@ -35,27 +35,30 @@ def get_brain_bee_question():
         "Correct Answer: [A/B/C/D]\n"
         "Explanation: [Explanation Text]"
     )
-
+    
+    filename = category + ".txt"
+    with open(filename, 'r', encoding="utf-8") as file:
+        information = file.read()
+        
     response = openai.ChatCompletion.create(
-        engine='gpt-4o',  # Specify the Azure engine name for GPT-4
+        engine='gpt-4o', 
         messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "system", "content": "You are a neuroscience expert with years of experience with writing brain bee questions. You also have a very high understanding of neuroscience pedagogy and how to properly write neuroscience competition exam questions."},
+            {"role": "system", "content": information[:10000]},
             {"role": "user", "content": prompt}
         ],
-        temperature=0.7,  # Set temperature for creativity
-        top_p=0.9,        # Set top_p for diversity control
+        temperature=0.7,
+        top_p=0.9,      
     )
 
     response_text = response.choices[0].message['content'].strip()
     lines = response_text.split('\n')
     
-    # Initialize placeholders
     question = ""
     choices = []
     correct_answer = ""
     explanation = ""
-
-    # Parsing logic with checks
+    
     for line in lines:
         if line.startswith("Question: "):
             question = line.replace("Question: ", "").strip()
@@ -75,12 +78,7 @@ def get_brain_bee_question():
 @app.route("/", methods=['GET'])
 def index():
     global quiz_state
-
-    # Generate an initial question and options
-    quiz_state['question'], quiz_state['choices'], quiz_state['correct_answer'], quiz_state['explanation'] = get_brain_bee_question()
-    quiz_state['feedback'] = ''
-    
-    # Render the HTML page with initial data
+    # Do NOT generate a question when loading the page
     return render_template('index.html', quiz_state=quiz_state)
 
 @app.route("/update", methods=['POST'])
@@ -111,9 +109,13 @@ def update():
 @app.route("/new_question", methods=['POST'])
 def new_question():
     global quiz_state
+    
+    category = request.form.get("category")
+    
+    if not category:
+        return jsonify({"error": "No category provided"}), 400
 
-    # Generate a new question for the next round
-    quiz_state['question'], quiz_state['choices'], quiz_state['correct_answer'], quiz_state['explanation'] = get_brain_bee_question()
+    quiz_state['question'], quiz_state['choices'], quiz_state['correct_answer'], quiz_state['explanation'] = get_brain_bee_question(category)
     
     return jsonify({
         'question': quiz_state['question'],
