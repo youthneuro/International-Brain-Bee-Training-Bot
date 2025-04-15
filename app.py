@@ -2,20 +2,16 @@ from flask import Flask, render_template, request, jsonify
 import openai
 import os
 import logging
-from logging.handlers import RotatingFileHandler
+import traceback
 
 app = Flask(__name__)
 
 # === Logging Setup ===
-if not os.path.exists('logs'):
-    os.mkdir('logs')
-
-log_file = os.path.join('logs', 'error.log')
-file_handler = RotatingFileHandler(log_file, maxBytes=10240, backupCount=5)
-file_handler.setLevel(logging.ERROR)
-formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s in %(pathname)s:%(lineno)d')
-file_handler.setFormatter(formatter)
-app.logger.addHandler(file_handler)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s'
+)
+app.logger.setLevel(logging.INFO)
 
 # === OpenAI API Setup ===
 openai.api_type = "azure"
@@ -23,7 +19,6 @@ openai.api_base = os.getenv("AZURE_OPENAI_ENDPOINT")
 openai.api_key = os.getenv("AZURE_OPENAI_API_KEY")
 openai.api_version = "2024-02-15-preview"
 
-# === Quiz State ===
 quiz_state = {
     'question': '',
     'choices': [],
@@ -89,16 +84,12 @@ def get_brain_bee_question(category):
 
     return question, choices, correct_answer, explanation
 
-# === Routes ===
 @app.route("/", methods=['GET'])
 def index():
-    global quiz_state
     return render_template('index.html', quiz_state=quiz_state)
 
 @app.route("/update", methods=['POST'])
 def update():
-    global quiz_state
-
     user_answer = request.form.get('answer', '').strip().upper()
     if user_answer not in ['A', 'B', 'C', 'D']:
         return jsonify({'feedback': 'Please select a valid answer.'}), 400
@@ -118,45 +109,44 @@ def update():
         'feedback': quiz_state['feedback']
     })
 
-    return jsonify({
-        'feedback': quiz_state['feedback']
-    })
+    return jsonify({'feedback': quiz_state['feedback']})
 
 @app.route("/new_question", methods=['POST'])
 def new_question():
-    global quiz_state
-
     category = request.form.get("category")
     if not category:
         return jsonify({"error": "No category provided"}), 400
 
     question, choices, correct_answer, explanation = get_brain_bee_question(category)
-    quiz_state['question'] = question
-    quiz_state['choices'] = choices
-    quiz_state['correct_answer'] = correct_answer
-    quiz_state['explanation'] = explanation
-    quiz_state['user_answer'] = None
-    quiz_state['feedback'] = ''
-
-    return jsonify({
+    quiz_state.update({
         'question': question,
-        'choices': choices
+        'choices': choices,
+        'correct_answer': correct_answer,
+        'explanation': explanation,
+        'user_answer': None,
+        'feedback': ''
     })
+
+    return jsonify({'question': question, 'choices': choices})
 
 @app.route("/review_history", methods=['GET'])
 def review_history():
-    global quiz_state
-
-    return jsonify({
-        'history': quiz_state['history']
-    })
+    return jsonify({'history': quiz_state['history']})
 
 # === Global Error Handler ===
 @app.errorhandler(Exception)
 def handle_exception(e):
-    app.logger.error('Unhandled Exception', exc_info=e)
+    error_info = {
+        "error": str(e),
+        "type": type(e).__name__,
+        "path": request.path,
+        "method": request.method,
+        "form_data": request.form.to_dict(),
+        "args": request.args.to_dict()
+    }
+    app.logger.error("Unhandled Exception:\n%s", traceback.format_exc())
+    app.logger.error("Request Info: %s", error_info)
     return jsonify({'error': 'An unexpected error occurred. Please try again later.'}), 500
 
-# === Run App ===
 if __name__ == "__main__":
     app.run(debug=True)
