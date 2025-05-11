@@ -3,6 +3,8 @@ import openai
 import os
 import logging
 import traceback
+import json
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -28,6 +30,27 @@ quiz_state = {
     'feedback': '',
     'history': []
 }
+
+def evaluate_response(question, correct_answer, user_answer, explanation):
+    eval_prompt = (
+        f"Evaluate the following answer from a quiz. "
+        f"Question: {question} "
+        f"Correct Answer: {correct_answer}, "
+        f"User Answer: {user_answer}, "
+        f"Explanation: {explanation} "
+        f"Return an evaluation score from 0 to 1 and a short justification."
+    )
+
+    response = openai.ChatCompletion.create(
+        engine='gpt-4o',
+        messages=[
+            {"role": "system", "content": "You are an expert evaluator of neuroscience quiz results."},
+            {"role": "user", "content": eval_prompt}
+        ],
+        temperature=0.2
+    )
+
+    return response.choices[0].message['content']
 
 # === Helper: Generate Question ===
 def get_brain_bee_question(category):
@@ -84,9 +107,33 @@ def get_brain_bee_question(category):
 
     return question, choices, correct_answer, explanation
 
+# === Helper: Evaluate Question ===
+def evaluate_question(question, choices, correct_answer, explanation):
+    eval_prompt = (
+        "Evaluate the following multiple-choice neuroscience question for clarity, scientific accuracy, and difficulty. "
+        "Give a score from 1 to 10 and provide specific feedback on how to improve if necessary.\n\n"
+        f"Question: {question}\n"
+        f"{chr(10).join(choices)}\n"
+        f"Correct Answer: {correct_answer}\n"
+        f"Explanation: {explanation}"
+    )
+
+    response = openai.ChatCompletion.create(
+        engine='gpt-4o',
+        messages=[
+            {"role": "system", "content": "You are a neuroscience expert and exam reviewer. Evaluate the quality of MCQs."},
+            {"role": "user", "content": eval_prompt}
+        ],
+        temperature=0.5
+    )
+
+    return response.choices[0].message['content'].strip()
+
 @app.route("/", methods=['GET'])
 def index():
     return render_template('index.html', quiz_state=quiz_state)
+
+import csv
 
 @app.route("/update", methods=['POST'])
 def update():
@@ -96,10 +143,27 @@ def update():
 
     quiz_state['user_answer'] = user_answer
 
-    if user_answer == quiz_state['correct_answer']:
-        quiz_state['feedback'] = "Correct! " + quiz_state['explanation']
-    else:
-        quiz_state['feedback'] = f"Incorrect. The correct answer was {quiz_state['correct_answer']}. " + quiz_state['explanation']
+    correct = user_answer == quiz_state['correct_answer']
+    base_feedback = "Correct! " if correct else f"Incorrect. The correct answer was {quiz_state['correct_answer']}. "
+    quiz_state['feedback'] = base_feedback + quiz_state['explanation']
+
+    # Add evaluator logic
+    evaluation_result = evaluate_response(
+        quiz_state['question'],
+        quiz_state['correct_answer'],
+        user_answer,
+        quiz_state['explanation']
+    )
+
+    # Save to CSV
+    with open("feedback_scores.csv", "a", newline='', encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow([
+            quiz_state['question'],
+            user_answer,
+            quiz_state['correct_answer'],
+            evaluation_result
+        ])
 
     quiz_state['history'].append({
         'question': quiz_state['question'],
@@ -118,6 +182,24 @@ def new_question():
         return jsonify({"error": "No category provided"}), 400
 
     question, choices, correct_answer, explanation = get_brain_bee_question(category)
+
+    # Evaluate the generated question
+    evaluation = evaluate_question(question, choices, correct_answer, explanation)
+
+    # Save to external JSON log
+    log_entry = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "category": category,
+        "question": question,
+        "choices": choices,
+        "correct_answer": correct_answer,
+        "explanation": explanation,
+        "evaluation": evaluation
+    }
+
+    with open("question_evaluations.json", "a", encoding="utf-8") as f:
+        f.write(json.dumps(log_entry) + "\n")
+
     quiz_state.update({
         'question': question,
         'choices': choices,
