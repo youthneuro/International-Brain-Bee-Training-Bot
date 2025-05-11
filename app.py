@@ -1,4 +1,5 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, session
+from flask_session import Session
 from openai import AzureOpenAI
 import os
 import logging
@@ -6,6 +7,9 @@ import traceback
 from supabase import create_client, Client
 
 app = Flask(__name__)
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")
+app.config['SESSION_TYPE'] = 'filesystem'
+Session(app)
 
 # === Logging Setup ===
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -22,17 +26,6 @@ client = AzureOpenAI(
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-# === Quiz State ===
-quiz_state = {
-    'question': '',
-    'choices': [],
-    'correct_answer': '',
-    'explanation': '',
-    'user_answer': None,
-    'feedback': '',
-    'history': []
-}
 
 # === Helper: Generate Brain Bee Question ===
 def get_brain_bee_question(category):
@@ -120,45 +113,51 @@ def evaluate_response(question, correct_answer, explanation):
 # === Routes ===
 @app.route("/", methods=['GET'])
 def index():
+    quiz_state = session.get('quiz_state', {})
     return render_template('index.html', quiz_state=quiz_state)
 
 @app.route("/update", methods=['POST'])
 def update():
+    quiz_state = session.get('quiz_state', {})
+
     user_answer = request.form.get('answer', '').strip().upper()
     if user_answer not in ['A', 'B', 'C', 'D']:
         return jsonify({'feedback': 'Please select a valid answer.'}), 400
 
     quiz_state['user_answer'] = user_answer
-
-    correct = user_answer == quiz_state['correct_answer']
-    base_feedback = "Correct! " if correct else f"Incorrect. The correct answer was {quiz_state['correct_answer']}. "
-    quiz_state['feedback'] = base_feedback + quiz_state['explanation']
+    correct = user_answer == quiz_state.get('correct_answer')
+    base_feedback = "Correct! " if correct else f"Incorrect. The correct answer was {quiz_state.get('correct_answer')}. "
+    feedback = base_feedback + quiz_state.get('explanation', '')
+    quiz_state['feedback'] = feedback
 
     evaluation_result = evaluate_response(
-        quiz_state['question'],
-        quiz_state['correct_answer'],
-        quiz_state['explanation']
+        quiz_state.get('question', ''),
+        quiz_state.get('correct_answer', ''),
+        quiz_state.get('explanation', '')
     )
 
     try:
         supabase.table("feedback_scores").insert({
-            "question": quiz_state['question'],
+            "question": quiz_state.get('question'),
             "user_answer": user_answer,
-            "correct_answer": quiz_state['correct_answer'],
+            "correct_answer": quiz_state.get('correct_answer'),
             "evaluation": evaluation_result
         }).execute()
     except Exception as e:
         app.logger.error("Supabase insert failed: %s", e)
 
-    quiz_state['history'].append({
-        'question': quiz_state['question'],
-        'choices': quiz_state['choices'],
+    history = quiz_state.get('history', [])
+    history.append({
+        'question': quiz_state.get('question'),
+        'choices': quiz_state.get('choices'),
         'user_answer': user_answer,
-        'correct_answer': quiz_state['correct_answer'],
-        'feedback': quiz_state['feedback']
+        'correct_answer': quiz_state.get('correct_answer'),
+        'feedback': feedback
     })
+    quiz_state['history'] = history
+    session['quiz_state'] = quiz_state
 
-    return jsonify({'feedback': quiz_state['feedback']})
+    return jsonify({'feedback': feedback})
 
 @app.route("/new_question", methods=['POST'])
 def new_question():
@@ -167,20 +166,24 @@ def new_question():
         return jsonify({"error": "No category provided"}), 400
 
     question, choices, correct_answer, explanation = get_brain_bee_question(category)
-    quiz_state.update({
+
+    quiz_state = {
         'question': question,
         'choices': choices,
         'correct_answer': correct_answer,
         'explanation': explanation,
         'user_answer': None,
-        'feedback': ''
-    })
+        'feedback': '',
+        'history': session.get('quiz_state', {}).get('history', [])
+    }
+
+    session['quiz_state'] = quiz_state
 
     return jsonify({'question': question, 'choices': choices})
 
 @app.route("/review_history", methods=['GET'])
 def review_history():
-    return jsonify({'history': quiz_state['history']})
+    return jsonify({'history': session.get('quiz_state', {}).get('history', [])})
 
 @app.errorhandler(Exception)
 def handle_exception(e):
