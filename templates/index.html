@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>International Brain Bee Training Bot</title>
@@ -17,6 +18,7 @@
                 // Render radio buttons for answer options
                 $('#answer-options').empty();
                 if (data.choices && data.choices.length === 4) {
+                    $('#answer-block').show();
                     data.choices.forEach(function(choice, idx) {
                         var match = choice.match(/^Option ([A-D]):\s*(.*)$/);
                         if (match) {
@@ -34,6 +36,8 @@
                             $('#answer-options').append(radioHtml);
                         }
                     });
+                } else {
+                    $('#answer-block').show();
                 }
 
                 if (data.question) {
@@ -58,9 +62,16 @@
 
             $('form').on('submit', function(event) {
                 event.preventDefault();
+            
+                var $submitBtn = $(this).find('button[type="submit"]');
+                var originalText = $submitBtn.text();
+                
+                // Disable button and show loading state
+                $submitBtn.prop('disabled', true).text('Submitting...').removeClass('btn-primary').addClass('btn-secondary');
+            
                 var csrftoken = Cookies.get('csrftoken');
                 $.ajaxSetup({ headers: { 'X-CSRFToken': csrftoken } });
-
+            
                 $.ajax({
                     url: '/update',
                     type: 'POST',
@@ -69,9 +80,16 @@
                     success: function(data) {
                         updateConversation(data);
                         $('#new-question-btn').show();
+                    },
+                    error: function(xhr, status, error) {
+                        alert("An error occurred: " + xhr.responseText);
+                    },
+                    complete: function() {
+                        // Restore button
+                        $submitBtn.prop('disabled', false).text(originalText).removeClass('btn-secondary').addClass('btn-primary');
                     }
                 });
-            });
+            });            
 
             $('#new-question-btn').on('click', function () {
                 var $btn = $(this);
@@ -114,18 +132,25 @@
             });
 
             var initialQuizState = {{ quiz_state | tojson }};
-            updateConversation(initialQuizState);
+
+            if (!initialQuizState.question) {
+                $('#conversation').html(
+                    `<div class="text-muted">
+                        <em>Click the <strong>"New Question"</strong> button below to begin your training!</em>
+                    </div>`
+                );
+            } else {
+                updateConversation(initialQuizState);
+            }
         });
     </script>
 </head>
 <body>
     <div class="container p-3">
-        <h3>Brain Bee Quiz</h3>
+        <h3>International Brain Bee Training Bot</h3>
         
         <div class="alert alert-warning">
-            <strong>Warning:</strong> The information provided by this bot may be inaccurate as it is powered by ChatGPT. 
-            <br>
-            <strong>Notice:</strong> Please be patient when clicking the buttons as it may take a few seconds for everything to load.
+            <strong>Notice:</strong> The information provided here is powered by OpenAI.
         </div>
 
         <!-- Dropdown for selecting category -->
@@ -156,16 +181,17 @@
         <!-- Form for submitting answers -->
         <form method="post" action="">
             <div class="mb-3">
-                <!-- Radio buttons for options -->
-                <label class="form-label"><strong>Your Answer Options:</strong></label>
-                <div id="answer-options"></div>
+                <div id="answer-block" style="display: none;">
+                    <label class="form-label"><strong>Your Answer Options:</strong></label>
+                    <div id="answer-options"></div>
+                </div>                
 
                 <!-- Submit button -->
                 <button class="btn btn-primary mt-2" type="submit">Submit Answer</button>
             </div>
         </form>
 
-        <button class="btn btn-info" id="review-history-btn" data-bs-toggle="collapse" data-bs-target="#review-history">Review Your Answers</button>
+        <button class="btn btn-info" id="review-history-btn" data-bs-toggle="collapse" data-bs-target="#review-history">Review Your Past Questions!</button>
 
         <!-- Review history section -->
         <br><br>

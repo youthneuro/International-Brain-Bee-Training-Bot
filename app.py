@@ -88,23 +88,29 @@ def get_brain_bee_question(category):
     return question, choices, correct_answer, explanation
 
 # === Helper: Evaluate Answer ===
-def evaluate_response(question, correct_answer, user_answer, explanation):
+def evaluate_response(question, correct_answer, explanation):
     eval_prompt = (
-        f"Evaluate the following answer from a neuroscience quiz. "
-        f"Question: {question}\n"
+        f"You are evaluating a neuroscience multiple-choice quiz question. "
+        f"Please do two things:\n"
+        f"1. Rate the quality of the question itself on a scale from 1 to 10 (where 1 = terrible, 10 = expert-level).\n"
+        f"2. Rate how appropriate and correct the stated 'correct answer' is, from 1 to 10.\n\n"
+        f"Use the following format exactly:\n"
+        f"Question Score: [score from 1 to 10]\n"
+        f"Answer Score: [score from 1 to 10]\n"
+        f"Justification: [brief justification for both scores]\n\n"
+        f"Here is the question:\n"
+        f"{question}\n\n"
         f"Correct Answer: {correct_answer}\n"
-        f"User Answer: {user_answer}\n"
-        f"Explanation: {explanation}\n"
-        f"Return an evaluation score from 0 to 1 and a brief justification."
+        f"Explanation: {explanation}"
     )
 
     response = openai.ChatCompletion.create(
         engine='gpt-4o',
         messages=[
-            {"role": "system", "content": "You are an expert evaluator of neuroscience quiz responses."},
+            {"role": "system", "content": "You are a neuroscience assessment expert. Be strict and objective."},
             {"role": "user", "content": eval_prompt}
         ],
-        temperature=0.2
+        temperature=0.3
     )
 
     return response.choices[0].message['content'].strip()
@@ -130,7 +136,6 @@ def update():
     evaluation_result = evaluate_response(
         quiz_state['question'],
         quiz_state['correct_answer'],
-        user_answer,
         quiz_state['explanation']
     )
 
