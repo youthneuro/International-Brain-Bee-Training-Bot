@@ -1,194 +1,187 @@
-from flask import Flask, render_template, request, jsonify
-import openai
-import os
-import logging
-import traceback
-from supabase import create_client, Client
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>International Brain Bee Training Bot</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/js-cookie@3.0.0/dist/js.cookie.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <script>
+        $(document).ready(function() {
+            function updateConversation(data) {
+                $('#conversation').empty();
 
-app = Flask(__name__)
+                // Render radio buttons for answer options
+                $('#answer-options').empty();
+                if (data.choices && data.choices.length === 4) {
+                    data.choices.forEach(function(choice, idx) {
+                        var match = choice.match(/^Option ([A-D]):\s*(.*)$/);
+                        if (match) {
+                            var letter = match[1];
+                            var text = match[2];
+                            var radioId = 'option-' + letter;
+                            var radioHtml = `
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="answer" id="${radioId}" value="${letter}" ${idx === 0 ? 'checked' : ''}>
+                                    <label class="form-check-label" for="${radioId}">
+                                        <strong>${letter}.</strong> ${text}
+                                    </label>
+                                </div>
+                            `;
+                            $('#answer-options').append(radioHtml);
+                        }
+                    });
+                }
 
-# === Logging Setup ===
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
-app.logger.setLevel(logging.INFO)
+                if (data.question) {
+                    $('#conversation').append('<div><br><strong>Question:</strong> ' + data.question + '<br></div>');
+                }
 
-# === OpenAI API Setup ===
-openai.api_type = "azure"
-openai.api_base = os.getenv("AZURE_OPENAI_ENDPOINT")
-openai.api_key = os.getenv("AZURE_OPENAI_API_KEY")
-openai.api_version = "2024-02-15-preview"
+                if (data.feedback) {
+                    $('#conversation').append('<div><br><strong>Feedback:</strong> ' + data.feedback + '<br></div>');
+                }
+            }
 
-# === Supabase Setup ===
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+            function displayHistory(history) {
+                $('#review-history-content').empty();
+                $.each(history, function(index, item) {
+                    $('#review-history-content').append('<div><strong>Question:</strong> ' + item.question + '</div>');
+                    $('#review-history-content').append('<div><strong>Choices:</strong><br>' + item.choices.join('<br>') + '</div>');
+                    $('#review-history-content').append('<div><strong>Your Answer:</strong> ' + item.user_answer + '</div>');
+                    $('#review-history-content').append('<div><strong>Correct Answer:</strong> ' + item.correct_answer + '</div>');
+                    $('#review-history-content').append('<div><strong>Feedback:</strong> ' + item.feedback + '</div><br>');
+                });
+            }
 
-quiz_state = {
-    'question': '',
-    'choices': [],
-    'correct_answer': '',
-    'explanation': '',
-    'user_answer': None,
-    'feedback': '',
-    'history': []
-}
+            $('form').on('submit', function(event) {
+                event.preventDefault();
+                var csrftoken = Cookies.get('csrftoken');
+                $.ajaxSetup({ headers: { 'X-CSRFToken': csrftoken } });
 
-# === Helper: Generate Question ===
-def get_brain_bee_question(category):
-    prompt = (
-        "Based on the neuroscience information about " + category + " you have been fed in, provide a difficult Brain Bee style question asking about a hypothetical situation with four multiple-choice options. "
-        "Include the correct answer and an explanation for the answer. "
-        "Format the output as follows:\n"
-        "Question: [Question Text]\n"
-        "Options:\n"
-        "Option A: [Option A Text]\n"
-        "Option B: [Option B Text]\n"
-        "Option C: [Option C Text]\n"
-        "Option D: [Option D Text]\n"
-        "Correct Answer: [A/B/C/D]\n"
-        "Explanation: [Explanation Text]"
-    )
+                $.ajax({
+                    url: '/update',
+                    type: 'POST',
+                    data: $(this).serialize(),
+                    dataType: 'json',
+                    success: function(data) {
+                        updateConversation(data);
+                        $('#new-question-btn').show();
+                    }
+                });
+            });
 
-    filename = category + ".txt"
-    with open(filename, 'r', encoding="utf-8") as file:
-        information = file.read()
+            $('#new-question-btn').on('click', function () {
+                var $btn = $(this);
+                var selectedCategory = $('#category-dropdown').val();
+            
+                // Disable button + loading text
+                $btn.prop('disabled', true).text('Question Generating...');
+            
+                $.ajax({
+                    url: '/new_question',
+                    type: 'POST',
+                    data: { category: selectedCategory },
+                    dataType: 'json',
+                    success: function (data) {
+                        if (data.error) {
+                            alert("Error: " + data.error);
+                        } else {
+                            updateConversation(data);
+                        }
+                    },
+                    error: function (xhr, status, error) {
+                        alert("An error occurred: " + xhr.responseText);
+                    },
+                    complete: function () {
+                        // Re-enable button and reset text
+                        $btn.prop('disabled', false).text('New Question');
+                    }
+                });
+            });                     
 
-    response = openai.ChatCompletion.create(
-        engine='gpt-4o',
-        messages=[
-            {"role": "system", "content": "You are a neuroscience expert with years of experience with writing brain bee questions. You also have a very high understanding of neuroscience pedagogy and how to properly write neuroscience competition exam questions."},
-            {"role": "system", "content": information[:10000]},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.7,
-        top_p=0.9,
-    )
+            $('#review-history-btn').on('click', function() {
+                $.ajax({
+                    url: '/review_history',
+                    type: 'GET',
+                    dataType: 'json',
+                    success: function(data) {
+                        displayHistory(data.history);
+                    }
+                });
+            });
 
-    response_text = response.choices[0].message['content'].strip()
-    lines = response_text.split('\n')
+            var initialQuizState = {{ quiz_state | tojson }};
+            updateConversation(initialQuizState);
+        });
+    </script>
+</head>
+<body>
+    <div class="container p-3">
+        <h3>Brain Bee Quiz</h3>
+        
+        <div class="alert alert-warning">
+            <strong>Warning:</strong> The information provided by this bot may be inaccurate as it is powered by ChatGPT. 
+            <br>
+            <strong>Notice:</strong> Please be patient when clicking the buttons as it may take a few seconds for everything to load.
+        </div>
 
-    question = ""
-    choices = []
-    correct_answer = ""
-    explanation = ""
+        <!-- Dropdown for selecting category -->
+        <div class="mb-3">
+            <label for="category-dropdown" class="form-label"><strong>Select a Category:</strong></label>
+            <select class="form-select" id="category-dropdown">
+                <option value="Sensory system">Sensory system</option>
+                <option value="Neurology (Diseases of the Brain)">Neurology (Diseases of the Brain)</option>
+                <option value="Neuroanatomy">Neuroanatomy</option>
+                <option value="Neural communication (electrical and chemical)">Neural communication (electrical and chemical)</option>
+                <option value="Motor system">Motor system</option>
+                <option value="Higher cognition">Higher cognition</option>
+                <option value="Development of the nervous system">Development of the nervous system</option>
+                <option value="Cellular organization of the nervous system">Cellular organization of the nervous system</option>
+            </select>
+        </div>
 
-    for line in lines:
-        if line.startswith("Question: "):
-            question = line.replace("Question: ", "").strip()
-        elif line.startswith("Option A: ") or line.startswith("Option B: ") or \
-             line.startswith("Option C: ") or line.startswith("Option D: "):
-            choices.append(line.strip())
-        elif line.startswith("Correct Answer: "):
-            correct_answer = line.replace("Correct Answer: ", "").strip().upper()
-        elif line.startswith("Explanation: "):
-            explanation = line.replace("Explanation: ", "").strip()
+        <!-- Question and feedback section -->
+        <div class="mb-3">
+            <h6>Question and Feedback:</h6>
+            <div class="container border overflow-auto h-50" id="conversation"><br></div>
+            <br>
+        </div>
 
-    if len(choices) != 4:
-        raise ValueError("Failed to parse all four options.")
+        <!-- Buttons for new question and review history -->
+        <button class="btn btn-secondary" id="new-question-btn">New Question</button>
 
-    return question, choices, correct_answer, explanation
+        <!-- Form for submitting answers -->
+        <form method="post" action="">
+            <div class="mb-3">
+                <!-- Radio buttons for options -->
+                <label class="form-label"><strong>Your Answer Options:</strong></label>
+                <div id="answer-options"></div>
 
-# === Helper: Evaluate Answer ===
-def evaluate_response(question, correct_answer, user_answer, explanation):
-    eval_prompt = (
-        f"Evaluate the following answer from a neuroscience quiz. "
-        f"Question: {question}\n"
-        f"Correct Answer: {correct_answer}\n"
-        f"User Answer: {user_answer}\n"
-        f"Explanation: {explanation}\n"
-        f"Return an evaluation score from 0 to 1 and a brief justification."
-    )
+                <!-- Submit button -->
+                <button class="btn btn-primary mt-2" type="submit">Submit Answer</button>
+            </div>
+        </form>
 
-    response = openai.ChatCompletion.create(
-        engine='gpt-4o',
-        messages=[
-            {"role": "system", "content": "You are an expert evaluator of neuroscience quiz responses."},
-            {"role": "user", "content": eval_prompt}
-        ],
-        temperature=0.2
-    )
+        <button class="btn btn-info" id="review-history-btn" data-bs-toggle="collapse" data-bs-target="#review-history">Review Your Answers</button>
 
-    return response.choices[0].message['content'].strip()
+        <!-- Review history section -->
+        <br><br>
+        <div class="collapse" id="review-history">
+            <div class="mb-3">
+                <h6>Review History:</h6>
+                <div class="container border overflow-auto h-50" id="review-history-content"></div>
+            </div>
+        </div>
 
-# === Routes ===
-@app.route("/", methods=['GET'])
-def index():
-    return render_template('index.html', quiz_state=quiz_state)
-
-@app.route("/update", methods=['POST'])
-def update():
-    user_answer = request.form.get('answer', '').strip().upper()
-    if user_answer not in ['A', 'B', 'C', 'D']:
-        return jsonify({'feedback': 'Please select a valid answer.'}), 400
-
-    quiz_state['user_answer'] = user_answer
-
-    correct = user_answer == quiz_state['correct_answer']
-    base_feedback = "Correct! " if correct else f"Incorrect. The correct answer was {quiz_state['correct_answer']}. "
-    quiz_state['feedback'] = base_feedback + quiz_state['explanation']
-
-    # Evaluate and log to Supabase
-    evaluation_result = evaluate_response(
-        quiz_state['question'],
-        quiz_state['correct_answer'],
-        user_answer,
-        quiz_state['explanation']
-    )
-
-    try:
-        supabase.table("feedback_scores").insert({
-            "question": quiz_state['question'],
-            "user_answer": user_answer,
-            "correct_answer": quiz_state['correct_answer'],
-            "evaluation": evaluation_result
-        }).execute()
-    except Exception as e:
-        app.logger.error("Supabase insert failed: %s", e)
-
-    quiz_state['history'].append({
-        'question': quiz_state['question'],
-        'choices': quiz_state['choices'],
-        'user_answer': user_answer,
-        'correct_answer': quiz_state['correct_answer'],
-        'feedback': quiz_state['feedback']
-    })
-
-    return jsonify({'feedback': quiz_state['feedback']})
-
-@app.route("/new_question", methods=['POST'])
-def new_question():
-    category = request.form.get("category")
-    if not category:
-        return jsonify({"error": "No category provided"}), 400
-
-    question, choices, correct_answer, explanation = get_brain_bee_question(category)
-    quiz_state.update({
-        'question': question,
-        'choices': choices,
-        'correct_answer': correct_answer,
-        'explanation': explanation,
-        'user_answer': None,
-        'feedback': ''
-    })
-
-    return jsonify({'question': question, 'choices': choices})
-
-@app.route("/review_history", methods=['GET'])
-def review_history():
-    return jsonify({'history': quiz_state['history']})
-
-@app.errorhandler(Exception)
-def handle_exception(e):
-    error_info = {
-        "error": str(e),
-        "type": type(e).__name__,
-        "path": request.path,
-        "method": request.method,
-        "form_data": request.form.to_dict(),
-        "args": request.args.to_dict()
-    }
-    app.logger.error("Unhandled Exception:\n%s", traceback.format_exc())
-    app.logger.error("Request Info: %s", error_info)
-    return jsonify({'error': 'An unexpected error occurred. Please try again later.'}), 500
-
-if __name__ == "__main__":
-    app.run(debug=True)
+        <!-- Footer -->
+        <footer class="mt-4">
+            <div class="text-center">
+                <p class="text-muted">Created by <strong>Ryan Cho</strong>. For inquiries, email <a href="mailto:rcho@youthneuro.org">rcho@youthneuro.org</a></p>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>
