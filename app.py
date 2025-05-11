@@ -1,5 +1,4 @@
 from flask import Flask, render_template, request, jsonify, session
-from flask_session import Session
 from openai import AzureOpenAI
 import os
 import logging
@@ -8,8 +7,6 @@ from supabase import create_client, Client
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")
-app.config['SESSION_TYPE'] = 'filesystem'
-Session(app)
 
 # === Logging Setup ===
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
