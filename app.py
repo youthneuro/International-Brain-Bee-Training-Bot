@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, jsonify
-import openai
+from openai import AzureOpenAI
 import os
 import logging
 import traceback
@@ -11,17 +11,19 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 app.logger.setLevel(logging.INFO)
 
-# === OpenAI API Setup ===
-openai.api_type = "azure"
-openai.api_base = os.getenv("AZURE_OPENAI_ENDPOINT")
-openai.api_key = os.getenv("AZURE_OPENAI_API_KEY")
-openai.api_version = "2024-02-15-preview"
+# === Azure OpenAI Client Setup ===
+client = AzureOpenAI(
+    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+    api_version="2024-02-15-preview",
+    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT")
+)
 
 # === Supabase Setup ===
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# === Quiz State ===
 quiz_state = {
     'question': '',
     'choices': [],
@@ -32,10 +34,10 @@ quiz_state = {
     'history': []
 }
 
-# === Helper: Generate Question ===
+# === Helper: Generate Brain Bee Question ===
 def get_brain_bee_question(category):
     prompt = (
-        "Based on the neuroscience information about " + category + " you have been fed in, provide a difficult Brain Bee style question asking about a hypothetical situation with four multiple-choice options. "
+        f"Based on the neuroscience information about {category} you have been fed in, provide a difficult Brain Bee style question asking about a hypothetical situation with four multiple-choice options. "
         "Include the correct answer and an explanation for the answer. "
         "Format the output as follows:\n"
         "Question: [Question Text]\n"
@@ -52,8 +54,8 @@ def get_brain_bee_question(category):
     with open(filename, 'r', encoding="utf-8") as file:
         information = file.read()
 
-    response = openai.ChatCompletion.create(
-        engine='gpt-4o',
+    response = client.chat.completions.create(
+        model="gpt-4o",
         messages=[
             {"role": "system", "content": "You are a neuroscience expert with years of experience with writing brain bee questions. You also have a very high understanding of neuroscience pedagogy and how to properly write neuroscience competition exam questions."},
             {"role": "system", "content": information[:10000]},
@@ -63,7 +65,7 @@ def get_brain_bee_question(category):
         top_p=0.9,
     )
 
-    response_text = response.choices[0].message['content'].strip()
+    response_text = response.choices[0].message.content.strip()
     lines = response_text.split('\n')
 
     question = ""
@@ -104,8 +106,8 @@ def evaluate_response(question, correct_answer, explanation):
         f"Explanation: {explanation}"
     )
 
-    response = openai.ChatCompletion.create(
-        engine='gpt-4o',
+    response = client.chat.completions.create(
+        model="gpt-4o",
         messages=[
             {"role": "system", "content": "You are a neuroscience assessment expert. Be strict and objective."},
             {"role": "user", "content": eval_prompt}
@@ -113,7 +115,7 @@ def evaluate_response(question, correct_answer, explanation):
         temperature=0.3
     )
 
-    return response.choices[0].message['content'].strip()
+    return response.choices[0].message.content.strip()
 
 # === Routes ===
 @app.route("/", methods=['GET'])
@@ -132,7 +134,6 @@ def update():
     base_feedback = "Correct! " if correct else f"Incorrect. The correct answer was {quiz_state['correct_answer']}. "
     quiz_state['feedback'] = base_feedback + quiz_state['explanation']
 
-    # Evaluate and log to Supabase
     evaluation_result = evaluate_response(
         quiz_state['question'],
         quiz_state['correct_answer'],
