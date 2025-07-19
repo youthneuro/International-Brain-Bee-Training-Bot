@@ -220,6 +220,28 @@
             background: var(--hover-color);
         }
 
+        .option-item.correct {
+            border-color: #28a745;
+            background: linear-gradient(135deg, #d4edda, #c3e6cb);
+            color: #155724;
+        }
+
+        .option-item.incorrect {
+            border-color: #dc3545;
+            background: linear-gradient(135deg, #f8d7da, #f5c6cb);
+            color: #721c24;
+        }
+
+        .option-item.correct .option-letter {
+            background: #28a745;
+            color: white;
+        }
+
+        .option-item.incorrect .option-letter {
+            background: #dc3545;
+            color: white;
+        }
+
         .option-item input[type="radio"] {
             display: none;
         }
@@ -420,6 +442,101 @@
             color: var(--bg-primary);
         }
 
+        .feature-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .text-primary {
+            color: var(--accent-color);
+        }
+
+        .text-info {
+            color: #17a2b8;
+        }
+
+        .text-secondary {
+            color: #6c757d;
+        }
+
+        .flashcard-answer-content {
+            background: var(--bg-secondary);
+            border-radius: var(--border-radius);
+            padding: 20px;
+            margin: 15px 0;
+            border-left: 4px solid var(--accent-color);
+        }
+
+        .flashcard-answer-content.flashcard-correct {
+            border-left-color: #28a745;
+            background: linear-gradient(135deg, #d4edda, #c3e6cb);
+        }
+
+        .flashcard-answer-content.flashcard-incorrect {
+            border-left-color: #dc3545;
+            background: linear-gradient(135deg, #f8d7da, #f5c6cb);
+        }
+
+        .answer-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 8px;
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 4px;
+        }
+
+        .answer-label {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .answer-value {
+            font-weight: bold;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 1.1rem;
+        }
+
+        .answer-value.correct {
+            background: #28a745;
+            color: white;
+        }
+
+        .answer-value.incorrect {
+            background: #dc3545;
+            color: white;
+        }
+
+        .feedback-text {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 4px;
+            border-left: 3px solid var(--accent-color);
+            font-style: italic;
+        }
+
+        [data-theme="dark"] .flashcard-answer-content.flashcard-correct {
+            background: linear-gradient(135deg, #1e4d2b, #2d5a3d);
+        }
+
+        [data-theme="dark"] .flashcard-answer-content.flashcard-incorrect {
+            background: linear-gradient(135deg, #4d1e1e, #5a2d2d);
+        }
+
+        [data-theme="dark"] .answer-row {
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        [data-theme="dark"] .feedback-text {
+            background: rgba(0, 0, 0, 0.3);
+        }
 
 
         @media (max-width: 768px) {
@@ -428,6 +545,8 @@
             .button-group { flex-direction: column; }
             .options-container { grid-template-columns: 1fr; }
             .theme-toggle { top: 10px; right: 10px; }
+            .feature-card { margin-bottom: 20px; }
+            .feature-card:last-child { margin-bottom: 0; }
         }
     </style>
     
@@ -494,6 +613,31 @@
                 button.text(originalText);
             }
 
+            function colorCodeOptions(userAnswer, correctAnswer) {
+                console.log('Color coding with:', { userAnswer, correctAnswer });
+                console.log('All option items:', $('.option-item').length);
+                
+                $('.option-item').each(function(index) {
+                    const $option = $(this);
+                    const optionLetter = $option.find('.option-letter').text();
+                    console.log(`Option ${index + 1}: letter="${optionLetter}", userAnswer="${userAnswer}", correctAnswer="${correctAnswer}"`);
+                    
+                    // Remove existing classes
+                    $option.removeClass('correct incorrect');
+                    
+                    // Add appropriate class - prioritize correct answer
+                    if (optionLetter === correctAnswer) {
+                        console.log('✅ Marking as correct:', optionLetter);
+                        $option.addClass('correct');
+                    } else if (optionLetter === userAnswer && userAnswer !== correctAnswer) {
+                        console.log('❌ Marking as incorrect:', optionLetter);
+                        $option.addClass('incorrect');
+                    } else {
+                        console.log('⚪ Keeping neutral:', optionLetter);
+                    }
+                });
+            }
+
             function updateConversation(data) {
                 if (data.question) {
                     // Show question
@@ -535,6 +679,14 @@
                         $('#feedback-container').removeClass('feedback-incorrect').addClass('feedback-correct');
                     } else {
                         $('#feedback-container').removeClass('feedback-correct').addClass('feedback-incorrect');
+                    }
+                    
+                    // Color code the options - get correct answer from response
+                    const userAnswer = $('input[name="answer"]:checked').val();
+                    const correctAnswer = data.correct_answer;
+                    console.log('Practice - User answer:', userAnswer, 'Correct answer:', correctAnswer);
+                    if (userAnswer && correctAnswer) {
+                        colorCodeOptions(userAnswer, correctAnswer);
                     }
                     
                     setState('answered');
@@ -655,8 +807,99 @@
                 });
             });
 
-            // Review history
-            $('#review-history-btn').on('click', function() {
+            // Back to home from practice
+            $('#back-to-home-btn').on('click', function() {
+                $('#home-page').removeClass('hidden');
+                $('#practice-section').addClass('hidden');
+                $('#history-section').addClass('hidden');
+                $('#flashcards-section').addClass('hidden');
+            });
+
+            // Back to home from history
+            $('#back-to-home-btn-2').on('click', function() {
+                $('#home-page').removeClass('hidden');
+                $('#practice-section').addClass('hidden');
+                $('#history-section').addClass('hidden');
+                $('#flashcards-section').addClass('hidden');
+            });
+
+            // Back to home from flashcards
+            $('#back-to-home-btn-3').on('click', function() {
+                $('#home-page').removeClass('hidden');
+                $('#practice-section').addClass('hidden');
+                $('#history-section').addClass('hidden');
+                $('#flashcards-section').addClass('hidden');
+            });
+
+            // Start practice
+            $('#start-practice-btn').on('click', function() {
+                var $btn = $(this);
+                var originalText = $btn.text();
+                var selectedCategory = $('#category-dropdown').val();
+                
+                showLoading($btn, 'Loading Practice...');
+
+                $.ajax({
+                    url: '/new_question',
+                    type: 'POST',
+                    data: { category: selectedCategory },
+                    dataType: 'json',
+                    success: function(data) {
+                        if (data.error) {
+                            alert("Error: " + data.error);
+                        } else {
+                            updateConversation(data);
+                            $('#home-page').addClass('hidden');
+                            $('#practice-section').removeClass('hidden');
+                            $('#history-section').addClass('hidden');
+                            $('#flashcards-section').addClass('hidden');
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        alert("An error occurred: " + xhr.responseText);
+                    },
+                    complete: function() {
+                        hideLoading($btn, originalText);
+                    }
+                });
+            });
+
+            // Start flashcards
+            $('#start-flashcards-btn').on('click', function() {
+                var $btn = $(this);
+                var originalText = $btn.text();
+                
+                showLoading($btn, 'Loading Flashcards...');
+
+                $.ajax({
+                    url: '/review_history',
+                    type: 'GET',
+                    dataType: 'json',
+                    success: function(data) {
+                        flashcardHistory = data.history || [];
+                        if (flashcardHistory.length === 0) {
+                            alert('No questions in history to review as flashcards.');
+                            hideLoading($btn, originalText);
+                            return;
+                        }
+                        flashcardIndex = 0;
+                        showFlashcard(flashcardIndex);
+                        $('#home-page').addClass('hidden');
+                        $('#practice-section').addClass('hidden');
+                        $('#history-section').addClass('hidden');
+                        $('#flashcards-section').removeClass('hidden');
+                    },
+                    error: function(xhr, status, error) {
+                        alert("An error occurred: " + xhr.responseText);
+                    },
+                    complete: function() {
+                        hideLoading($btn, originalText);
+                    }
+                });
+            });
+
+            // View history
+            $('#view-history-btn').on('click', function() {
                 var $btn = $(this);
                 var originalText = $btn.text();
                 
@@ -668,6 +911,10 @@
                     dataType: 'json',
                     success: function(data) {
                         displayHistory(data.history);
+                        $('#home-page').addClass('hidden');
+                        $('#practice-section').addClass('hidden');
+                        $('#history-section').removeClass('hidden');
+                        $('#flashcards-section').addClass('hidden');
                     },
                     error: function(xhr, status, error) {
                         alert("An error occurred: " + xhr.responseText);
@@ -706,12 +953,104 @@
 
             // Initialize
             var initialQuizState = {{ quiz_state | tojson }};
-            if (!initialQuizState.question) {
-                setState('idle');
-                $('#welcome-message').removeClass('hidden');
-            } else {
+            // Always start with the home page
+            $('#home-page').removeClass('hidden');
+            $('#practice-section').addClass('hidden');
+            $('#history-section').addClass('hidden');
+            $('#flashcards-section').addClass('hidden');
+            
+            // If there's an existing question, store it but don't show it automatically
+            if (initialQuizState.question) {
+                // Store the state for when user chooses to practice
                 updateConversation(initialQuizState);
+            } else {
+                setState('idle');
             }
+
+            let flashcardHistory = [];
+            let flashcardIndex = 0;
+
+            function showFlashcard(index) {
+                if (!flashcardHistory.length) {
+                    $('#flashcard-question').text('No questions in history.');
+                    $('#flashcard-choices').empty();
+                    $('#flashcard-answer').hide();
+                    $('#show-flashcard-answer-btn').hide();
+                    $('#flashcard-progress').text('');
+                    return;
+                }
+                const item = flashcardHistory[index];
+                $('#flashcard-question').text(item.question);
+                let choicesHtml = '';
+                if (item.choices && item.choices.length === 4) {
+                    item.choices.forEach(function(choice) {
+                        var match = choice.match(/^Option ([A-D]):\s*(.*)$/);
+                        if (match) {
+                            var letter = match[1];
+                            var text = match[2];
+                            choicesHtml += `<div class="option-item"><div class="option-letter">${letter}</div> <span>${text}</span></div>`;
+                        }
+                    });
+                }
+                $('#flashcard-choices').html(choicesHtml);
+                
+                // Create better formatted answer display
+                const isCorrect = item.user_answer === item.correct_answer;
+                const answerClass = isCorrect ? 'flashcard-correct' : 'flashcard-incorrect';
+                const answerHtml = `
+                    <div class="flashcard-answer-content ${answerClass}">
+                        <div class="answer-row">
+                            <span class="answer-label">Your Original Answer:</span>
+                            <span class="answer-value ${isCorrect ? 'correct' : 'incorrect'}">${item.user_answer}</span>
+                        </div>
+                        <div class="answer-row">
+                            <span class="answer-label">Correct Answer:</span>
+                            <span class="answer-value correct">${item.correct_answer}</span>
+                        </div>
+                        <div class="feedback-text">${item.feedback}</div>
+                    </div>
+                `;
+                $('#flashcard-answer').hide().html(answerHtml);
+                $('#show-flashcard-answer-btn').show();
+                $('#flashcard-progress').text(`Question ${index + 1} of ${flashcardHistory.length}`);
+                
+                // Reset color coding for new flashcard - no colors until "Show Answer" is clicked
+                $('.option-item').removeClass('correct incorrect selected');
+            }
+
+            $('#show-flashcard-answer-btn').on('click', function() {
+                $('#flashcard-answer').show();
+                $(this).hide();
+                
+                // Color code the flashcard options based on the original answer from history
+                const item = flashcardHistory[flashcardIndex];
+                console.log('Flashcard item:', item);
+                if (item) {
+                    console.log('Original user answer:', item.user_answer);
+                    console.log('Correct answer:', item.correct_answer);
+                    // Show the original user's answer and the correct answer
+                    colorCodeOptions(item.user_answer, item.correct_answer);
+                }
+            });
+
+            $('#flashcard-next-btn').on('click', function() {
+                if (flashcardHistory.length && flashcardIndex < flashcardHistory.length - 1) {
+                    flashcardIndex++;
+                    showFlashcard(flashcardIndex);
+                }
+            });
+
+            $('#flashcard-prev-btn').on('click', function() {
+                if (flashcardHistory.length && flashcardIndex > 0) {
+                    flashcardIndex--;
+                    showFlashcard(flashcardIndex);
+                }
+            });
+
+            // Hide flashcards section when other buttons are clicked
+            $('#new-question-btn, #view-history-btn, #clear-session-btn, #start-practice-btn, #start-flashcards-btn').on('click', function() {
+                $('#flashcards-section').addClass('hidden');
+            });
         });
     </script>
 </head>
@@ -729,74 +1068,154 @@
 
         <!-- Main Content -->
         <div class="content-area">
-
-        <!-- Category Selection -->
-        <div class="card">
-            <div class="card-header">
-                <i class="fas fa-list"></i> Select Category
-            </div>
-            <div class="card-body">
-                <select class="form-select" id="category-dropdown">
-                    <option value="Sensory system">Sensory system</option>
-                    <option value="Neurology (Diseases of the Brain)">Neurology (Diseases of the Brain)</option>
-                    <option value="Neuroanatomy">Neuroanatomy</option>
-                    <option value="Neural communication (electrical and chemical)">Neural communication (electrical and chemical)</option>
-                    <option value="Motor system">Motor system</option>
-                    <option value="Higher cognition">Higher cognition</option>
-                    <option value="Development of the nervous system">Development of the nervous system</option>
-                    <option value="Cellular organization of the nervous system">Cellular organization of the nervous system</option>
-                </select>
-            </div>
-        </div>
-
-        <!-- Button Group (Moved Above) -->
-        <div class="button-group">
-            <button class="btn btn-primary" id="new-question-btn">
-                <i class="fas fa-plus"></i> New Question
-            </button>
-            <button class="btn btn-success hidden" id="submit-answer-btn">
-                <i class="fas fa-check"></i> Submit Answer
-            </button>
-            <button class="btn btn-warning" id="clear-session-btn">
-                <i class="fas fa-trash"></i> Clear Session
-            </button>
-            <button class="btn btn-info" id="review-history-btn" data-bs-toggle="collapse" data-bs-target="#review-history">
-                <i class="fas fa-history"></i> Review History
-            </button>
-        </div>
-
-        <!-- Stats Container -->
-        <div id="stats-container" class="stats-container hidden"></div>
-
-        <!-- Question Container -->
-        <div id="question-container" class="question-container hidden">
-            <div class="question-text" id="question-text"></div>
-            <div class="options-container" id="options-container"></div>
-        </div>
-
-        <!-- Feedback Container -->
-        <div id="feedback-container" class="feedback-container hidden">
-            <div id="feedback-text"></div>
-        </div>
-
-        <!-- Review History Section -->
-        <div class="collapse" id="review-history">
-            <div class="card">
-                <div class="card-header">
-                    <i class="fas fa-history"></i> Question History
-                </div>
-                <div class="card-body">
-                    <div id="review-history-content"></div>
+            <!-- Home Page -->
+            <div id="home-page">
+                <div class="row">
+                    <div class="col-md-4 mb-4">
+                        <div class="card h-100 feature-card" id="practice-card">
+                            <div class="card-body text-center">
+                                <i class="fas fa-brain fa-3x mb-3 text-primary"></i>
+                                <h5 class="card-title">Practice Questions</h5>
+                                <p class="card-text">Generate new Brain Bee style questions and test your knowledge across different neuroscience categories.</p>
+                                <button class="btn btn-primary" id="start-practice-btn">
+                                    <i class="fas fa-play"></i> Start Practice
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-4">
+                        <div class="card h-100 feature-card" id="history-card">
+                            <div class="card-body text-center">
+                                <i class="fas fa-history fa-3x mb-3 text-info"></i>
+                                <h5 class="card-title">Review History</h5>
+                                <p class="card-text">Browse through all your previously answered questions with detailed feedback and explanations.</p>
+                                <button class="btn btn-info" id="view-history-btn">
+                                    <i class="fas fa-list"></i> View History
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4 mb-4">
+                        <div class="card h-100 feature-card" id="flashcards-card">
+                            <div class="card-body text-center">
+                                <i class="fas fa-clone fa-3x mb-3 text-secondary"></i>
+                                <h5 class="card-title">Flashcards Review</h5>
+                                <p class="card-text">Review your answered questions as interactive flashcards. Test your memory by hiding answers.</p>
+                                <button class="btn btn-secondary" id="start-flashcards-btn">
+                                    <i class="fas fa-clone"></i> Start Flashcards
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <!-- Notice -->
-        <div class="alert alert-info">
-            <i class="fas fa-info-circle"></i>
-            <strong>Notice:</strong> Questions are powered by OpenAI and study materials like the Brain Bee Facts textbook.
+            <!-- Practice Section -->
+            <div id="practice-section" class="hidden">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h3><i class="fas fa-brain"></i> Practice Questions</h3>
+                    <button class="btn btn-outline-primary" id="back-to-home-btn">
+                        <i class="fas fa-home"></i> Back to Home
+                    </button>
+                </div>
+
+                <!-- Category Selection -->
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-list"></i> Select Category
+                    </div>
+                    <div class="card-body">
+                        <select class="form-select" id="category-dropdown">
+                            <option value="Sensory system">Sensory system</option>
+                            <option value="Neurology (Diseases of the Brain)">Neurology (Diseases of the Brain)</option>
+                            <option value="Neuroanatomy">Neuroanatomy</option>
+                            <option value="Neural communication (electrical and chemical)">Neural communication (electrical and chemical)</option>
+                            <option value="Motor system">Motor system</option>
+                            <option value="Higher cognition">Higher cognition</option>
+                            <option value="Development of the nervous system">Development of the nervous system</option>
+                            <option value="Cellular organization of the nervous system">Cellular organization of the nervous system</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Button Group -->
+                <div class="button-group">
+                    <button class="btn btn-primary" id="new-question-btn">
+                        <i class="fas fa-plus"></i> New Question
+                    </button>
+                    <button class="btn btn-success hidden" id="submit-answer-btn">
+                        <i class="fas fa-check"></i> Submit Answer
+                    </button>
+                    <button class="btn btn-warning" id="clear-session-btn">
+                        <i class="fas fa-trash"></i> Clear Session
+                    </button>
+                </div>
+
+                <!-- Stats Container -->
+                <div id="stats-container" class="stats-container hidden"></div>
+
+                <!-- Question Container -->
+                <div id="question-container" class="question-container hidden">
+                    <div class="question-text" id="question-text"></div>
+                    <div class="options-container" id="options-container"></div>
+                </div>
+
+                <!-- Feedback Container -->
+                <div id="feedback-container" class="feedback-container hidden">
+                    <div id="feedback-text"></div>
+                </div>
+            </div>
+
+            <!-- Review History Section -->
+            <div id="history-section" class="hidden">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h3><i class="fas fa-history"></i> Review History</h3>
+                    <button class="btn btn-outline-primary" id="back-to-home-btn-2">
+                        <i class="fas fa-home"></i> Back to Home
+                    </button>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-history"></i> Question History
+                    </div>
+                    <div class="card-body">
+                        <div id="review-history-content"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Flashcards Review Section -->
+            <div id="flashcards-section" class="hidden">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h3><i class="fas fa-clone"></i> Flashcards Review</h3>
+                    <button class="btn btn-outline-primary" id="back-to-home-btn-3">
+                        <i class="fas fa-home"></i> Back to Home
+                    </button>
+                </div>
+                <div class="card">
+                    <div class="card-header">
+                        <i class="fas fa-clone"></i> Flashcards Review
+                    </div>
+                    <div class="card-body">
+                        <div id="flashcard-question" class="question-text mb-3"></div>
+                        <div id="flashcard-choices" class="mb-3"></div>
+                        <button class="btn btn-info mb-3" id="show-flashcard-answer-btn">Show Answer</button>
+                        <div id="flashcard-answer" class="mb-3" style="display:none;"></div>
+                        <div class="d-flex justify-content-between">
+                            <button class="btn btn-outline-primary" id="flashcard-prev-btn">Previous</button>
+                            <span id="flashcard-progress" class="align-self-center text-muted"></span>
+                            <button class="btn btn-outline-primary" id="flashcard-next-btn">Next</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Notice -->
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                <strong>Notice:</strong> Questions are powered by OpenAI and study materials like the Brain Bee Facts textbook.
+            </div>
         </div>
-    </div>
 
     <!-- Footer -->
     <div class="footer">

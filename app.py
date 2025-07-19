@@ -60,6 +60,12 @@ def save_user_data(data):
         return False
     
     try:
+        # Generate a unique session ID for this user
+        session_id = session.get('session_id')
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            session['session_id'] = session_id
+        
         # Compress data to save space
         compressed_data = json.dumps(data, separators=(',', ':'))
         
@@ -71,16 +77,14 @@ def save_user_data(data):
                 compressed_data = json.dumps(data, separators=(',', ':'))
                 app.logger.warning("Truncated history due to size limits")
         
-        # Generate a unique session ID for this user
-        session_id = session.get('session_id')
-        if not session_id:
-            session_id = str(uuid.uuid4())
-            session['session_id'] = session_id
-        
-        # Store user data in Supabase with session ID
-        supabase.table("user_sessions").upsert({
+        # Store user data in Supabase - include session_id in the JSON data
+        data_with_session = {
             "session_id": session_id,
-            "session_data": compressed_data,
+            "data": data
+        }
+        
+        supabase.table("user_sessions").upsert({
+            "session_data": data_with_session,
             "updated_at": "now()"
         }).execute()
         return True
@@ -104,9 +108,10 @@ def load_user_data():
             return {}  # No session ID means no data to load
         
         # Get session data for this specific session ID
-        result = supabase.table("user_sessions").select("session_data").eq("session_id", session_id).order("updated_at", desc=True).limit(1).execute()
+        result = supabase.table("user_sessions").select("session_data").eq("session_data->session_id", session_id).order("updated_at", desc=True).limit(1).execute()
         if result.data:
-            return json.loads(result.data[0]['session_data'])
+            session_data = result.data[0]['session_data']
+            return session_data.get('data', {})
         return {}
     except Exception as e:
         app.logger.error(f"Failed to load user data: {e}")
@@ -145,7 +150,7 @@ def save_user_session_data(data):
     return True
 
 def cleanup_old_sessions():
-    """Clean up old sessions to free up space."""
+    """Clean up old sessions to free up space. (30 period)"""
     if not supabase:
         return
     
@@ -182,15 +187,16 @@ def get_storage_status():
 # === Helper: Generate Brain Bee Question ===
 def get_brain_bee_question(category, retry_count=0):
     prompt = (
-        f"Based on the neuroscience information about {category} you have been fed in, provide a difficult Brain Bee style question asking about a hypothetical situation with four multiple-choice options. "
-        "Format the output as follows:\n"
-        "Question: [Question Text]\n"
+        f"Based on the neuroscience information about {category}, create a challenging Brain Bee style question with four multiple-choice options. "
+        "IMPORTANT: Randomly select the correct answer from A, B, C, or D. Do not favor any particular option.\n\n"
+        "Format your response exactly as follows:\n"
+        "Question: [Write a detailed neuroscience question]\n"
         "Options:\n"
-        "Option A: [Option A Text]\n"
-        "Option B: [Option B Text]\n"
-        "Option C: [Option C Text]\n"
-        "Option D: [Option D Text]\n"
-        "Correct Answer: [A/B/C/D]"
+        "Option A: [First option]\n"
+        "Option B: [Second option]\n"
+        "Option C: [Third option]\n"
+        "Option D: [Fourth option]\n"
+        "Correct Answer: [Randomly choose A, B, C, or D]"
     )
 
     # Use simple, reliable content selection
@@ -207,15 +213,16 @@ def get_brain_bee_question(category, retry_count=0):
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role": "system", "content": "You are a neuroscience expert with years of experience with writing brain bee questions. You also have a very high understanding of neuroscience pedagogy and how to properly write neuroscience competition exam questions. CRITICAL: Your explanation must directly address the specific question asked and explain why the correct answer is right. DO NOT use generic explanations or templates. Each explanation must be unique and specific to the question content."},
+            {"role": "system", "content": "You are a neuroscience expert creating Brain Bee competition questions. IMPORTANT: Randomly distribute correct answers across A, B, C, and D options. Do not favor any particular letter. Each question must be unique and challenging."},
             {"role": "system", "content": relevant_content},
             {"role": "user", "content": prompt}
         ],
-        temperature=0.8,
+        temperature=0.8,  # Increased randomness
         top_p=0.9,
     )
 
     response_text = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
+    
     lines = response_text.split('\n')
 
     question = ""
@@ -230,6 +237,11 @@ def get_brain_bee_question(category, retry_count=0):
             choices.append(line.strip())
         elif line.startswith("Correct Answer: "):
             correct_answer = line.replace("Correct Answer: ", "").strip().upper()
+            # Clean up the correct answer - extract just the letter from "Option C" or "C"
+            if correct_answer.startswith("OPTION "):
+                correct_answer = correct_answer.replace("OPTION ", "")
+            elif correct_answer.startswith("OPTION"):
+                correct_answer = correct_answer.replace("OPTION", "").strip()
 
     if len(choices) != 4:
         raise ValueError("Failed to parse all four options.")
@@ -259,26 +271,21 @@ def generate_explanation(question, choices, correct_answer, category=None):
                 relevant_content = ""
     
     explanation_prompt = (
-        f"You are a neuroscience expert explaining why a specific answer is correct. "
-        f"Please provide a BRIEF, concise explanation (2-3 sentences maximum) that:\n"
-        f"1. Directly addresses the specific question asked\n"
-        f"2. Explains why the correct answer is right\n"
-        f"3. Uses appropriate neuroscience terminology\n"
-        f"4. CRITICAL: Your explanation must match the question content exactly\n"
-        f"5. CRITICAL: Do NOT use generic templates or cached responses\n"
-        f"6. CRITICAL: Focus ONLY on the specific topic mentioned in the question\n\n"
+        f"You are explaining why a specific answer is correct for a neuroscience question. "
+        f"CRITICAL: Your explanation must directly address the specific question asked and explain why the correct answer is right. "
+        f"Focus ONLY on the specific topic and scenario mentioned in the question.\n\n"
         f"Question: {question}\n"
         f"Options:\n"
-        f"{chr(65)}. {choices[0]}\n"
-        f"{chr(66)}. {choices[1]}\n"
-        f"{chr(67)}. {choices[2]}\n"
-        f"{chr(68)}. {choices[3]}\n"
+        f"A. {choices[0].replace('Option A: ', '')}\n"
+        f"B. {choices[1].replace('Option B: ', '')}\n"
+        f"C. {choices[2].replace('Option C: ', '')}\n"
+        f"D. {choices[3].replace('Option D: ', '')}\n"
         f"Correct Answer: {correct_answer}\n\n"
-        f"Please provide a brief, 2-3 sentence explanation that directly addresses this specific question:"
+        f"Provide a brief, specific explanation (2-3 sentences) that directly addresses this question:"
     )
 
     messages = [
-        {"role": "system", "content": "You are a neuroscience educator. Provide BRIEF, concise explanations (2-3 sentences maximum). Focus on the key point only. CRITICAL: Your explanation must directly address the specific question asked and not use generic templates."}
+        {"role": "system", "content": "You are a neuroscience educator. Provide specific, concise explanations that directly address the question asked. Do NOT use generic templates or explanations that could apply to any question."}
     ]
     
     # Add relevant content if available
@@ -290,7 +297,7 @@ def generate_explanation(question, choices, correct_answer, category=None):
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=messages,
-        temperature=0.8
+        temperature=0.7
     )
 
     return response.choices[0].message.content.strip() if response.choices[0].message.content else ""
@@ -405,12 +412,13 @@ def update():
 
     try:
         # Store feedback in Supabase (no user_id needed)
-        supabase.table("feedback_scores").insert({
-            "question": quiz_state.get('question'),
-            "user_answer": user_answer,
-            "correct_answer": quiz_state.get('correct_answer'),
-            "evaluation": evaluation_result
-        }).execute()
+        if supabase:  # Only try to insert if Supabase is configured
+            supabase.table("feedback_scores").insert({
+                "question": quiz_state.get('question'),
+                "user_answer": user_answer,
+                "correct_answer": quiz_state.get('correct_answer'),
+                "evaluation": evaluation_result
+            }).execute()
     except Exception as e:
         app.logger.error("Supabase insert failed: %s", e)
 
@@ -428,7 +436,7 @@ def update():
     # Save to persistent storage
     save_user_session_data(quiz_state)
 
-    return jsonify({'feedback': feedback})
+    return jsonify({'feedback': feedback, 'correct_answer': quiz_state.get('correct_answer')})
 
 @app.route("/new_question", methods=['POST'])
 def new_question():
