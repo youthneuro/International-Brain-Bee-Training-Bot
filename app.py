@@ -217,7 +217,7 @@ def get_brain_bee_question(category, retry_count=0):
             {"role": "system", "content": relevant_content},
             {"role": "user", "content": prompt}
         ],
-        temperature=0.8,  # Increased randomness
+        temperature=0.6,  # Increased randomness
         top_p=0.9,
     )
 
