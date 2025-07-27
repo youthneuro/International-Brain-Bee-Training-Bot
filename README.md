@@ -1,21 +1,45 @@
-**Brain Bee Training Bot**
+# Brain Bee Training Bot
 
-**Overview**
-Flask microframework
-AJAX
-HTML
-CSS
-JavaScript
+A web-based training platform for International Brain Bee competition preparation. Generates neuroscience questions, tracks progress, and provides detailed feedback.
 
-**Features**
-Generate Brain Bee Questions: Requests Brain Bee-style questions with multiple-choice options and explanations from the ChatGPT API.
+## Features
 
-Interactive Quiz: Users can answer questions and receive immediate feedback on their responses.
-History Tracking: Keeps track of past questions and user answers for review.
+- **Question Generation**: AI-powered Brain Bee style multiple-choice questions across neuroscience categories
+- **Interactive Quiz**: Real-time feedback with explanations for incorrect answers
+- **Progress Tracking**: Session-based history of questions and performance
+- **Analytics**: Performance metrics and category-based analysis
+- **Persistent Storage**: User data and feedback stored in Supabase
+- **Responsive UI**: Clean interface that works on desktop and mobile
 
-**Prerequisites**
-Python 3.x: Ensure Python is installed on your system.
-Flask: Install Flask to create the web server.
-OpenAI API Key: Obtain an API key from OpenAI for accessing the ChatGPT API.
+## Tech Stack
 
-Currently deployed on vercel
+- **Backend**: Flask (Python)
+- **AI**: Azure OpenAI GPT-4
+- **Database**: Supabase (PostgreSQL + Storage)
+- **Frontend**: HTML, CSS, JavaScript
+- **Deployment**: Vercel
+- **Session Management**: Flask-Session
+
+## Setup
+
+1. Install dependencies: `pip install -r requirements.txt`
+2. Set environment variables:
+   - `AZURE_OPENAI_API_KEY`
+   - `AZURE_OPENAI_ENDPOINT`
+   - `SUPABASE_URL`
+   - `SUPABASE_ANON_KEY`
+   - `FLASK_SECRET_KEY`
+3. Run: `python app.py`
+
+## Categories
+
+- Sensory System
+- Motor System
+- Neural Communication
+- Neuroanatomy
+- Higher Cognition
+- Neurology (Diseases)
+
+## Deployment
+
+Currently deployed on Vercel with Supabase for data persistence.
