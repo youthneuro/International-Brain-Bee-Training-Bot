@@ -454,7 +454,7 @@ def get_brain_bee_question_fallback(category, relevant_content):
             {"role": "system", "content": relevant_content},
             {"role": "user", "content": prompt}
         ],
-        temperature=0.8,
+        temperature=0.6,  # Increased randomness
         top_p=0.9,
     )
 
