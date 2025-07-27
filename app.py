@@ -544,8 +544,10 @@ def evaluate_response(question, correct_answer, explanation):
     """Evaluate question quality and answer correctness with structured JSON format."""
     
     eval_prompt = (
-        f"You are evaluating a neuroscience multiple-choice quiz question. "
-        f"Please provide your evaluation in the following EXACT JSON format:\n\n"
+        f"You are a strict neuroscience assessment expert evaluating quiz questions. "
+        f"Be CRITICAL and OBJECTIVE. Rate questions harshly - most should be 4-7 range. "
+        f"Only give 8-10 for exceptional questions. Rate answer correctness strictly too.\n\n"
+        f"Provide evaluation in this EXACT JSON format:\n\n"
         f"{{\n"
         f"  \"question_quality_rating\": [1-10],\n"
         f"  \"answer_correctness_rating\": [1-10],\n"
@@ -559,6 +561,7 @@ def evaluate_response(question, correct_answer, explanation):
         f"Question: {question}\n"
         f"Correct Answer: {correct_answer}\n"
         f"Explanation: {explanation}\n\n"
+        f"CRITICAL: Be strict. Most questions should rate 4-7. Only 8-10 for truly exceptional questions. "
         f"Provide ONLY the JSON response, no additional text."
     )
 
@@ -567,10 +570,10 @@ def evaluate_response(question, correct_answer, explanation):
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are a neuroscience assessment expert. Be strict and objective. Always respond with valid JSON only."},
+                {"role": "system", "content": "You are a strict neuroscience assessment expert. Be CRITICAL and OBJECTIVE. Rate questions harshly - most should be 4-7 range. Only give 8-10 for exceptional questions. Always respond with valid JSON only."},
                 {"role": "user", "content": eval_prompt}
             ],
-            temperature=0.3
+            temperature=0.7
         )
         
         evaluation_text = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
