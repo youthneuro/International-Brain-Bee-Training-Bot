@@ -4,6 +4,7 @@ A web-based training platform for International Brain Bee competition preparatio
 
 ## Features
 
+- **RAG-Powered Questions**: Intelligent content retrieval using embeddings for precise, relevant questions
 - **Question Generation**: AI-powered Brain Bee style multiple-choice questions across neuroscience categories
 - **Interactive Quiz**: Real-time feedback with explanations for incorrect answers
 - **Progress Tracking**: Session-based history of questions and performance
@@ -29,7 +30,8 @@ A web-based training platform for International Brain Bee competition preparatio
    - `SUPABASE_URL`
    - `SUPABASE_ANON_KEY`
    - `FLASK_SECRET_KEY`
-3. Run: `python app.py`
+3. Initialize RAG system: `python initialize_rag.py`
+4. Run: `python app.py`
 
 ## Categories
 

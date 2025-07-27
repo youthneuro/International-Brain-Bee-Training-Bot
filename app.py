@@ -359,16 +359,21 @@ def get_storage_status():
 def get_brain_bee_question(category, retry_count=0):
     """Generate Brain Bee question using structured outputs for consistent JSON format."""
     
-    # Use simple, reliable content selection
+    # Use RAG for intelligent content selection
     try:
-        from simple_fallback import get_brain_bee_question_simple
-        relevant_content = get_brain_bee_question_simple(category)
+        from rag_system import get_brain_bee_question_rag
+        relevant_content = get_brain_bee_question_rag(category)
     except Exception as e:
-        # Ultimate fallback
-        filename = category + ".txt"
-        with open(filename, 'r', encoding="utf-8") as file:
-            information = file.read()
-        relevant_content = information[:8000]
+        # Fallback to simple selection if RAG fails
+        try:
+            from simple_fallback import get_brain_bee_question_simple
+            relevant_content = get_brain_bee_question_simple(category)
+        except Exception as e2:
+            # Ultimate fallback
+            filename = category + ".txt"
+            with open(filename, 'r', encoding="utf-8") as file:
+                information = file.read()
+            relevant_content = information[:8000]
 
     system_prompt = f"""You are a neuroscience expert creating Brain Bee competition questions. 
     
@@ -492,20 +497,25 @@ def get_brain_bee_question_fallback(category, relevant_content):
 def generate_explanation(question, choices, correct_answer, category=None):
     """Generate an explanation for why the correct answer is right when user answers incorrectly."""
     
-    # Get relevant neuroscience content for the category
+    # Get relevant neuroscience content for the category using RAG
     relevant_content = ""
     if category:
         try:
-            from simple_fallback import get_brain_bee_question_simple
-            relevant_content = get_brain_bee_question_simple(category)
+            from rag_system import get_brain_bee_question_rag
+            relevant_content = get_brain_bee_question_rag(category)
         except Exception as e:
-            # Fallback to basic content
+            # Fallback to simple selection if RAG fails
             try:
-                filename = category + ".txt"
-                with open(filename, 'r', encoding="utf-8") as file:
-                    relevant_content = file.read()[:4000]  # Use less content for explanation
-            except:
-                relevant_content = ""
+                from simple_fallback import get_brain_bee_question_simple
+                relevant_content = get_brain_bee_question_simple(category)
+            except Exception as e2:
+                # Fallback to basic content
+                try:
+                    filename = category + ".txt"
+                    with open(filename, 'r', encoding="utf-8") as file:
+                        relevant_content = file.read()[:4000]  # Use less content for explanation
+                except:
+                    relevant_content = ""
     
     explanation_prompt = (
         f"You are explaining why a specific answer is correct for a neuroscience question. "
