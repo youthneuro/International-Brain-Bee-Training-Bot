@@ -9,19 +9,39 @@ CREATE TABLE IF NOT EXISTS user_sessions (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Create feedback_scores table for storing question feedback
+-- Create feedback_scores table for storing structured question feedback
 CREATE TABLE IF NOT EXISTS feedback_scores (
     id BIGSERIAL PRIMARY KEY,
     question TEXT NOT NULL,
     user_answer TEXT NOT NULL,
     correct_answer TEXT NOT NULL,
     evaluation TEXT,
+    category TEXT,
+    is_correct BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_user_sessions_updated_at ON user_sessions(updated_at);
 CREATE INDEX IF NOT EXISTS idx_feedback_scores_created_at ON feedback_scores(created_at);
+CREATE INDEX IF NOT EXISTS idx_feedback_scores_category ON feedback_scores(category);
+CREATE INDEX IF NOT EXISTS idx_feedback_scores_is_correct ON feedback_scores(is_correct);
+
+-- Create a view for analytics
+CREATE OR REPLACE VIEW feedback_analytics AS
+SELECT 
+    category,
+    COUNT(*) as total_questions,
+    SUM(CASE WHEN is_correct THEN 1 ELSE 0 END) as correct_answers,
+    ROUND(
+        (SUM(CASE WHEN is_correct THEN 1 ELSE 0 END)::DECIMAL / COUNT(*)::DECIMAL) * 100, 
+        2
+    ) as accuracy_percentage,
+    AVG(CASE WHEN evaluation IS NOT NULL THEN 1 ELSE 0 END) as evaluation_coverage
+FROM feedback_scores 
+WHERE category IS NOT NULL
+GROUP BY category
+ORDER BY total_questions DESC;
 
 -- Enable Row Level Security (RLS) - optional, can be disabled if causing issues
 -- ALTER TABLE user_sessions ENABLE ROW LEVEL SECURITY;

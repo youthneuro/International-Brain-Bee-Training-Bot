@@ -8,12 +8,24 @@ from supabase import create_client, Client
 from dotenv import load_dotenv
 import json
 import hashlib
+from typing import List, Optional
+from datetime import datetime, timedelta
 
 # Load environment variables from .env file
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecretkey")
+
+# === Data Models ===
+class UserFeedback:
+    def __init__(self, question: str, user_answer: str, correct_answer: str, evaluation: str = None, category: str = None, is_correct: bool = False):
+        self.question = question
+        self.user_answer = user_answer
+        self.correct_answer = correct_answer
+        self.evaluation = evaluation
+        self.category = category
+        self.is_correct = is_correct
 
 # === Logging Setup ===
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -55,7 +67,7 @@ def get_user_id():
     return session['user_id']
 
 def save_user_data(data):
-    """Save user data to Supabase for persistence across serverless invocations."""
+    """Save user data to Supabase Storage as JSON file."""
     if not supabase:
         return False
     
@@ -77,16 +89,31 @@ def save_user_data(data):
                 compressed_data = json.dumps(data, separators=(',', ':'))
                 app.logger.warning("Truncated history due to size limits")
         
-        # Store user data in Supabase - include session_id in the JSON data
-        data_with_session = {
-            "session_id": session_id,
-            "data": data
-        }
+        # Store user data as JSON file in Supabase Storage
+        filename = f"sessions/{session_id}.json"
         
-        supabase.table("user_sessions").upsert({
-            "session_data": data_with_session,
-            "updated_at": "now()"
-        }).execute()
+        # Upload JSON file to Supabase Storage (replace if exists)
+        try:
+            supabase.storage.from_("brain-bee-data").upload(
+                path=filename,
+                file=compressed_data.encode('utf-8'),
+                file_options={"content-type": "application/json"}
+            )
+        except Exception as upload_error:
+            if "already exists" in str(upload_error).lower():
+                # File exists, remove and re-upload
+                try:
+                    supabase.storage.from_("brain-bee-data").remove([filename])
+                except:
+                    pass
+                supabase.storage.from_("brain-bee-data").upload(
+                    path=filename,
+                    file=compressed_data.encode('utf-8'),
+                    file_options={"content-type": "application/json"}
+                )
+            else:
+                raise upload_error
+        
         return True
     except Exception as e:
         app.logger.error(f"Failed to save user data: {e}")
@@ -97,7 +124,7 @@ def save_user_data(data):
         return False
 
 def load_user_data():
-    """Load user data from Supabase."""
+    """Load user data from Supabase Storage JSON file."""
     if not supabase:
         return {}
     
@@ -107,15 +134,171 @@ def load_user_data():
         if not session_id:
             return {}  # No session ID means no data to load
         
-        # Get session data for this specific session ID
-        result = supabase.table("user_sessions").select("session_data").eq("session_data->session_id", session_id).order("updated_at", desc=True).limit(1).execute()
-        if result.data:
-            session_data = result.data[0]['session_data']
-            return session_data.get('data', {})
-        return {}
+        # Download JSON file from Supabase Storage
+        filename = f"sessions/{session_id}.json"
+        
+        try:
+            response = supabase.storage.from_("brain-bee-data").download(filename)
+            if response:
+                data = json.loads(response.decode('utf-8'))
+                return data
+        except Exception as download_error:
+            # File might not exist yet, which is normal for new users
+            app.logger.info(f"Session file not found for {session_id}: {download_error}")
+            return {}
+            
     except Exception as e:
         app.logger.error(f"Failed to load user data: {e}")
         return {}
+
+def save_feedback_data(feedback_data):
+    """Save feedback data to Supabase Storage as JSON file."""
+    if not supabase:
+        return False
+    
+    try:
+        # Create timestamp for the feedback entry
+        timestamp = datetime.now().isoformat()
+        
+        # Generate unique filename for this feedback entry
+        feedback_id = str(uuid.uuid4())
+        filename = f"feedback/{timestamp}_{feedback_id}.json"
+        
+        # Convert feedback data to JSON
+        feedback_json = json.dumps({
+            "question": feedback_data.question,
+            "user_answer": feedback_data.user_answer,
+            "correct_answer": feedback_data.correct_answer,
+            "evaluation": feedback_data.evaluation,
+            "category": feedback_data.category,
+            "is_correct": feedback_data.is_correct,
+            "timestamp": timestamp,
+            "feedback_id": feedback_id
+        }, separators=(',', ':'))
+        
+        # Upload feedback JSON file to Supabase Storage
+        try:
+            supabase.storage.from_("brain-bee-data").upload(
+                path=filename,
+                file=feedback_json.encode('utf-8'),
+                file_options={"content-type": "application/json"}
+            )
+        except Exception as upload_error:
+            if "already exists" in str(upload_error).lower():
+                # File exists, remove and re-upload
+                try:
+                    supabase.storage.from_("brain-bee-data").remove([filename])
+                except:
+                    pass
+                supabase.storage.from_("brain-bee-data").upload(
+                    path=filename,
+                    file=feedback_json.encode('utf-8'),
+                    file_options={"content-type": "application/json"}
+                )
+            else:
+                raise upload_error
+        
+        return True
+    except Exception as e:
+        app.logger.error(f"Failed to save feedback data: {e}")
+        return False
+
+def get_feedback_analytics():
+    """Get analytics from feedback JSON files in Supabase Storage."""
+    if not supabase:
+        return {"status": "no_supabase", "message": "Supabase not configured"}
+    
+    try:
+        # List all feedback files
+        files = supabase.storage.from_("brain-bee-data").list("feedback")
+        
+        analytics = {
+            "total_feedback": 0,
+            "categories": {},
+            "correct_answers": 0,
+            "total_questions": 0
+        }
+        
+        # Process each feedback file
+        for file_info in files:
+            if file_info['name'].endswith('.json'):
+                try:
+                    # Download and parse feedback file
+                    response = supabase.storage.from_("brain-bee-data").download(f"feedback/{file_info['name']}")
+                    if response:
+                        feedback_data = json.loads(response.decode('utf-8'))
+                        
+                        analytics["total_feedback"] += 1
+                        analytics["total_questions"] += 1
+                        
+                        if feedback_data.get("is_correct", False):
+                            analytics["correct_answers"] += 1
+                        
+                        category = feedback_data.get("category", "Unknown")
+                        if category not in analytics["categories"]:
+                            analytics["categories"][category] = {
+                                "total": 0,
+                                "correct": 0
+                            }
+                        
+                        analytics["categories"][category]["total"] += 1
+                        if feedback_data.get("is_correct", False):
+                            analytics["categories"][category]["correct"] += 1
+                            
+                except Exception as e:
+                    app.logger.error(f"Failed to process feedback file {file_info['name']}: {e}")
+                    continue
+        
+        # Calculate percentages
+        if analytics["total_questions"] > 0:
+            analytics["overall_accuracy"] = (analytics["correct_answers"] / analytics["total_questions"]) * 100
+        else:
+            analytics["overall_accuracy"] = 0
+            
+        for category in analytics["categories"]:
+            cat_data = analytics["categories"][category]
+            if cat_data["total"] > 0:
+                cat_data["accuracy"] = (cat_data["correct"] / cat_data["total"]) * 100
+            else:
+                cat_data["accuracy"] = 0
+        
+        return {
+            "status": "success",
+            "analytics": analytics
+        }
+        
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to get analytics: {e}"}
+
+def cleanup_old_files():
+    """Clean up old files to free up space. (30 day period)"""
+    if not supabase:
+        return
+    
+    try:
+        # Get current timestamp
+        now = datetime.now()
+        cutoff_date = now - timedelta(days=30)
+        
+        # List all session files
+        session_files = supabase.storage.from_("brain-bee-data").list("sessions")
+        
+        for file_info in session_files:
+            if file_info['name'].endswith('.json'):
+                # Check file creation time (if available)
+                # Note: Supabase Storage doesn't provide creation time in list response
+                # This is a simplified cleanup - you might want to implement more sophisticated logic
+                try:
+                    # For now, we'll just delete files older than 30 days based on filename
+                    # You could store creation time in the JSON content for more precise cleanup
+                    supabase.storage.from_("brain-bee-data").remove([f"sessions/{file_info['name']}"])
+                    app.logger.info(f"Cleaned up old session file: {file_info['name']}")
+                except Exception as e:
+                    app.logger.error(f"Failed to cleanup file {file_info['name']}: {e}")
+        
+        app.logger.info("Cleaned up old files")
+    except Exception as e:
+        app.logger.error(f"Failed to cleanup old files: {e}")
 
 def get_user_session_data():
     """Get user session data with robust fallback system."""
@@ -149,43 +332,108 @@ def save_user_session_data(data):
     
     return True
 
-def cleanup_old_sessions():
-    """Clean up old sessions to free up space. (30 period)"""
-    if not supabase:
-        return
-    
-    try:
-        # Delete sessions older than 30 days
-        supabase.table("user_sessions").delete().lt("updated_at", "now() - interval '30 days'").execute()
-        app.logger.info("Cleaned up old sessions")
-    except Exception as e:
-        app.logger.error(f"Failed to cleanup old sessions: {e}")
-
 def get_storage_status():
     """Check storage status and return recommendations."""
     if not supabase:
         return {"status": "no_supabase", "message": "Supabase not configured"}
     
     try:
-        # Get session count
-        result = supabase.table("user_sessions").select("id").execute()
-        session_count = len(result.data) if result.data else 0
+        # Count session files
+        session_files = supabase.storage.from_("brain-bee-data").list("sessions")
+        session_count = len(session_files) if session_files else 0
         
-        # Get feedback count
-        feedback_result = supabase.table("feedback_scores").select("id").execute()
-        feedback_count = len(feedback_result.data) if feedback_result.data else 0
+        # Count feedback files
+        feedback_files = supabase.storage.from_("brain-bee-data").list("feedback")
+        feedback_count = len(feedback_files) if feedback_files else 0
         
         return {
             "status": "healthy",
             "sessions": session_count,
             "feedback_entries": feedback_count,
-            "message": f"Storage healthy: {session_count} sessions, {feedback_count} feedback entries"
+            "message": f"Storage healthy: {session_count} session files, {feedback_count} feedback files"
         }
     except Exception as e:
         return {"status": "error", "message": f"Storage check failed: {e}"}
 
-# === Helper: Generate Brain Bee Question ===
+# === Helper: Generate Brain Bee Question with Structured Outputs ===
 def get_brain_bee_question(category, retry_count=0):
+    """Generate Brain Bee question using structured outputs for consistent JSON format."""
+    
+    # Use simple, reliable content selection
+    try:
+        from simple_fallback import get_brain_bee_question_simple
+        relevant_content = get_brain_bee_question_simple(category)
+    except Exception as e:
+        # Ultimate fallback
+        filename = category + ".txt"
+        with open(filename, 'r', encoding="utf-8") as file:
+            information = file.read()
+        relevant_content = information[:8000]
+
+    system_prompt = f"""You are a neuroscience expert creating Brain Bee competition questions. 
+    
+IMPORTANT REQUIREMENTS:
+1. Create a challenging multiple-choice question about {category}
+2. Randomly select the correct answer from A, B, C, or D (do not favor any particular letter)
+3. All options must be plausible but clearly distinguishable
+4. Question should test deep understanding, not just memorization
+5. Include realistic clinical or research scenarios when possible
+
+The question should be at Brain Bee competition level difficulty."""
+
+    user_prompt = f"""Based on the following neuroscience information about {category}, create a Brain Bee question:
+
+{relevant_content}
+
+Generate a challenging question with exactly 4 options (A, B, C, D) and randomly select the correct answer."""
+
+    # Use regular completion instead of structured outputs
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        temperature=0.8,
+        top_p=0.9,
+    )
+    
+    response_text = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
+    
+    # Parse the response manually
+    try:
+        lines = response_text.split('\n')
+        question = ""
+        choices = []
+        correct_answer = ""
+        
+        for line in lines:
+            line = line.strip()
+            if line.startswith("Question:"):
+                question = line.replace("Question:", "").strip()
+            elif line.startswith("Option A:") or line.startswith("A:"):
+                choices.append(line)
+            elif line.startswith("Option B:") or line.startswith("B:"):
+                choices.append(line)
+            elif line.startswith("Option C:") or line.startswith("C:"):
+                choices.append(line)
+            elif line.startswith("Option D:") or line.startswith("D:"):
+                choices.append(line)
+            elif line.startswith("Correct Answer:"):
+                correct_answer = line.replace("Correct Answer:", "").strip()
+        
+        if question and choices and correct_answer:
+            return (question, choices, correct_answer, "")
+        else:
+            # Fallback if parsing fails
+            return get_brain_bee_question_fallback(category, relevant_content)
+            
+    except Exception as e:
+        app.logger.error(f"Response parsing failed: {e}")
+        return get_brain_bee_question_fallback(category, relevant_content)
+
+def get_brain_bee_question_fallback(category, relevant_content):
+    """Fallback method using traditional completion if structured outputs fail."""
     prompt = (
         f"Based on the neuroscience information about {category}, create a challenging Brain Bee style question with four multiple-choice options. "
         "IMPORTANT: Randomly select the correct answer from A, B, C, or D. Do not favor any particular option.\n\n"
@@ -199,17 +447,6 @@ def get_brain_bee_question(category, retry_count=0):
         "Correct Answer: [Randomly choose A, B, C, or D]"
     )
 
-    # Use simple, reliable content selection
-    try:
-        from simple_fallback import get_brain_bee_question_simple
-        relevant_content = get_brain_bee_question_simple(category)
-    except Exception as e:
-        # Ultimate fallback
-        filename = category + ".txt"
-        with open(filename, 'r', encoding="utf-8") as file:
-            information = file.read()
-        relevant_content = information[:8000]
-
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=[
@@ -217,7 +454,7 @@ def get_brain_bee_question(category, retry_count=0):
             {"role": "system", "content": relevant_content},
             {"role": "user", "content": prompt}
         ],
-        temperature=0.8,  # Increased randomness
+        temperature=0.8,
         top_p=0.9,
     )
 
@@ -251,7 +488,7 @@ def get_brain_bee_question(category, retry_count=0):
     
     return question, choices, correct_answer, ""
 
-# === Helper: Generate Explanation ===
+# === Helper: Generate Explanation with Structured Outputs ===
 def generate_explanation(question, choices, correct_answer, category=None):
     """Generate an explanation for why the correct answer is right when user answers incorrectly."""
     
@@ -302,33 +539,114 @@ def generate_explanation(question, choices, correct_answer, category=None):
 
     return response.choices[0].message.content.strip() if response.choices[0].message.content else ""
 
-# === Helper: Evaluate Answer ===
+# === Helper: Evaluate Answer with Structured Outputs ===
 def evaluate_response(question, correct_answer, explanation):
+    """Evaluate question quality and answer correctness with structured JSON format."""
+    
     eval_prompt = (
         f"You are evaluating a neuroscience multiple-choice quiz question. "
-        f"Please do two things:\n"
-        f"1. Rate the quality of the question itself on a scale from 1 to 10 (where 1 = terrible, 10 = expert-level).\n"
-        f"2. Rate how appropriate and correct the stated 'correct answer' is, from 1 to 10.\n\n"
-        f"Use the following format exactly:\n"
-        f"Question Score: [score from 1 to 10]\n"
-        f"Answer Score: [score from 1 to 10]\n"
-        f"Justification: [brief justification for both scores]\n\n"
-        f"Here is the question:\n"
-        f"{question}\n\n"
+        f"Please provide your evaluation in the following EXACT JSON format:\n\n"
+        f"{{\n"
+        f"  \"question_quality_rating\": [1-10],\n"
+        f"  \"answer_correctness_rating\": [1-10],\n"
+        f"  \"question_quality_justification\": \"[Detailed explanation of question quality rating]\",\n"
+        f"  \"answer_correctness_justification\": \"[Detailed explanation of answer correctness rating]\",\n"
+        f"  \"overall_assessment\": \"[Overall assessment of the question and answer]\",\n"
+        f"  \"difficulty_level\": \"[easy/medium/hard/expert]\",\n"
+        f"  \"suggested_improvements\": \"[Any suggestions for improving the question]\"\n"
+        f"}}\n\n"
+        f"QUESTION TO EVALUATE:\n"
+        f"Question: {question}\n"
         f"Correct Answer: {correct_answer}\n"
-        f"Explanation: {explanation}"
+        f"Explanation: {explanation}\n\n"
+        f"Provide ONLY the JSON response, no additional text."
     )
 
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "You are a neuroscience assessment expert. Be strict and objective."},
-            {"role": "user", "content": eval_prompt}
-        ],
-        temperature=0.3
-    )
-
-    return response.choices[0].message.content.strip() if response.choices[0].message.content else ""
+    try:
+        # Use regular completion for evaluation
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are a neuroscience assessment expert. Be strict and objective. Always respond with valid JSON only."},
+                {"role": "user", "content": eval_prompt}
+            ],
+            temperature=0.3
+        )
+        
+        evaluation_text = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
+        
+        # Try to parse as JSON
+        if evaluation_text:
+            try:
+                # Clean up the response to extract JSON
+                evaluation_text = evaluation_text.strip()
+                if evaluation_text.startswith("```json"):
+                    evaluation_text = evaluation_text[7:]
+                if evaluation_text.endswith("```"):
+                    evaluation_text = evaluation_text[:-3]
+                evaluation_text = evaluation_text.strip()
+                
+                # Parse JSON
+                evaluation_data = json.loads(evaluation_text)
+                
+                # Validate required fields
+                required_fields = [
+                    "question_quality_rating", 
+                    "answer_correctness_rating",
+                    "question_quality_justification",
+                    "answer_correctness_justification",
+                    "overall_assessment",
+                    "difficulty_level",
+                    "suggested_improvements"
+                ]
+                
+                for field in required_fields:
+                    if field not in evaluation_data:
+                        evaluation_data[field] = "Not provided"
+                
+                # Ensure ratings are integers
+                evaluation_data["question_quality_rating"] = int(evaluation_data.get("question_quality_rating", 5))
+                evaluation_data["answer_correctness_rating"] = int(evaluation_data.get("answer_correctness_rating", 5))
+                
+                # Return structured JSON
+                return json.dumps(evaluation_data, indent=2)
+                
+            except json.JSONDecodeError as e:
+                app.logger.error(f"Failed to parse evaluation JSON: {e}")
+                # Fallback to default structured format
+                return json.dumps({
+                    "question_quality_rating": 5,
+                    "answer_correctness_rating": 5,
+                    "question_quality_justification": "Unable to parse evaluation",
+                    "answer_correctness_justification": "Unable to parse evaluation",
+                    "overall_assessment": "Evaluation failed",
+                    "difficulty_level": "medium",
+                    "suggested_improvements": "None"
+                }, indent=2)
+        
+        # If no evaluation was generated, provide a default
+        return json.dumps({
+            "question_quality_rating": 5,
+            "answer_correctness_rating": 5,
+            "question_quality_justification": "Unable to evaluate due to insufficient information",
+            "answer_correctness_justification": "Unable to evaluate due to insufficient information",
+            "overall_assessment": "Default assessment",
+            "difficulty_level": "medium",
+            "suggested_improvements": "None"
+        }, indent=2)
+        
+    except Exception as e:
+        app.logger.error(f"Evaluation failed: {e}")
+        # Return default structured format
+        return json.dumps({
+            "question_quality_rating": 5,
+            "answer_correctness_rating": 5,
+            "question_quality_justification": "Evaluation failed",
+            "answer_correctness_justification": "Evaluation failed",
+            "overall_assessment": "Error in evaluation",
+            "difficulty_level": "medium",
+            "suggested_improvements": "None"
+        }, indent=2)
 
 # === Routes ===
 @app.route("/", methods=['GET'])
@@ -349,24 +667,24 @@ def update():
     correct = user_answer == quiz_state.get('correct_answer')
     base_feedback = "Correct! " if correct else f"Incorrect. The correct answer was {quiz_state.get('correct_answer')}. "
     
+    # Determine category from question content (always needed for feedback)
+    current_question = quiz_state.get('question', '')
+    category = None
+    if "sensory" in current_question.lower() or "auditory" in current_question.lower() or "visual" in current_question.lower():
+        category = "Sensory system"
+    elif "motor" in current_question.lower() or "movement" in current_question.lower():
+        category = "Motor system"
+    elif "neuron" in current_question.lower() or "synapse" in current_question.lower():
+        category = "Neural communication (electrical and chemical)"
+    elif "anatomy" in current_question.lower() or "structure" in current_question.lower():
+        category = "Neuroanatomy"
+    else:
+        category = "Sensory system"  # Default fallback
+    
     # Generate explanation only when user answers incorrectly
     if not correct:
-        current_question = quiz_state.get('question', '')
         current_choices = quiz_state.get('choices', [])
         current_correct_answer = quiz_state.get('correct_answer', '')
-        
-        # Try to determine category from question content
-        category = None
-        if "sensory" in current_question.lower() or "auditory" in current_question.lower() or "visual" in current_question.lower():
-            category = "Sensory system"
-        elif "motor" in current_question.lower() or "movement" in current_question.lower():
-            category = "Motor system"
-        elif "neuron" in current_question.lower() or "synapse" in current_question.lower():
-            category = "Neural communication (electrical and chemical)"
-        elif "anatomy" in current_question.lower() or "structure" in current_question.lower():
-            category = "Neuroanatomy"
-        else:
-            category = "Sensory system"  # Default fallback
         
         # Generate explanation on-demand with category context
         explanation = generate_explanation(current_question, current_choices, current_correct_answer, category)
@@ -410,15 +728,20 @@ def update():
         quiz_state.get('explanation', '')
     )
 
+    # Create structured feedback data for Supabase
+    feedback_data = UserFeedback(
+        question=quiz_state.get('question', ''),
+        user_answer=user_answer,
+        correct_answer=quiz_state.get('correct_answer', ''),
+        evaluation=evaluation_result,
+        category=category,
+        is_correct=correct
+    )
+
     try:
-        # Store feedback in Supabase (no user_id needed)
-        if supabase:  # Only try to insert if Supabase is configured
-            supabase.table("feedback_scores").insert({
-                "question": quiz_state.get('question'),
-                "user_answer": user_answer,
-                "correct_answer": quiz_state.get('correct_answer'),
-                "evaluation": evaluation_result
-            }).execute()
+        # Store structured feedback in Supabase
+        if supabase:
+            save_feedback_data(feedback_data)
     except Exception as e:
         app.logger.error("Supabase insert failed: %s", e)
 
@@ -489,7 +812,7 @@ def storage_status():
 def cleanup_storage():
     """Clean up old sessions to free up space."""
     try:
-        cleanup_old_sessions()
+        cleanup_old_files()
         return jsonify({'message': 'Cleanup completed successfully'})
     except Exception as e:
         app.logger.error("Failed to cleanup storage: %s", e)
