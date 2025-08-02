@@ -774,13 +774,59 @@ def update():
 
     return jsonify({'feedback': feedback, 'correct_answer': quiz_state.get('correct_answer')})
 
+<<<<<<< HEAD
+=======
+
+# === Helper: Fetch a random question from Supabase if available ===
+def get_random_supabase_question(category):
+    if not supabase:
+        return None
+    try:
+        # Assume you have a table or storage bucket named 'questions' with fields: question, choices, correct_answer, category
+        # This example assumes a table. Adjust if you use storage bucket.
+        response = supabase.table('questions').select('*').eq('category', category).execute()
+        questions = response.data if hasattr(response, 'data') else response
+        if questions and len(questions) > 0:
+            import random
+            q = random.choice(questions)
+            # Ensure choices is a list
+            choices = q['choices'] if isinstance(q['choices'], list) else json.loads(q['choices'])
+            return q['question'], choices, q['correct_answer'], q.get('explanation', '')
+        return None
+    except Exception as e:
+        app.logger.error(f"Failed to fetch question from Supabase: {e}")
+        return None
+
+def is_openai_rate_limited(e):
+    # Check for OpenAI rate limit error
+    msg = str(e).lower()
+    return 'rate limit' in msg or '429' in msg or 'quota' in msg
+
+>>>>>>> 3ae2396 (new updates)
 @app.route("/new_question", methods=['POST'])
 def new_question():
     category = request.form.get("category")
     if not category:
         return jsonify({"error": "No category provided"}), 400
 
+<<<<<<< HEAD
     question, choices, correct_answer, explanation = get_brain_bee_question(category)
+=======
+    try:
+        question, choices, correct_answer, explanation = get_brain_bee_question(category)
+    except Exception as e:
+        # If rate limit or quota error, fallback to Supabase
+        if is_openai_rate_limited(e):
+            app.logger.warning("OpenAI rate limit hit, using Supabase fallback.")
+            fallback = get_random_supabase_question(category)
+            if fallback:
+                question, choices, correct_answer, explanation = fallback
+            else:
+                return jsonify({"error": "Rate limit reached and no backup questions available."}), 429
+        else:
+            app.logger.error(f"Failed to generate question: {e}")
+            return jsonify({"error": "Failed to generate question."}), 500
+>>>>>>> 3ae2396 (new updates)
 
     # Get existing history from persistent storage
     existing_data = get_user_session_data()
