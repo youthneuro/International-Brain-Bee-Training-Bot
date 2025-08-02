@@ -388,7 +388,36 @@
             box-shadow: var(--shadow);
         }
 
+        /* Wrap long answer choices in review history */
+        .review-choice-badge {
+            display: block;
+            max-width: 100%;
+            white-space: normal;
+            word-break: break-word;
+            margin-bottom: 4px;
+            vertical-align: top;
+            text-align: left;
+        }
+
+        /* Center review history and flashcards vertically and horizontally */
+        .centered-section {
+            min-height: 70vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
         .stats-container {
+        .feature-row-outer {
+            display: flex;
+            justify-content: center;
+            width: 100%;
+        }
+        .feature-row {
+            display: flex;
+            flex-direction: row;
+            gap: 30px;
+        }
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 20px;
@@ -560,17 +589,6 @@
     </style>
     
     <script>
-<<<<<<< HEAD
-=======
-        // Show theme toggle only on Home page
-        function showThemeToggleOnHome() {
-            if ($('#home-page').is(':visible')) {
-                $('#theme-toggle').show();
-            } else {
-                $('#theme-toggle').hide();
-            }
-        }
->>>>>>> 3ae2396 (new updates)
         $(document).ready(function() {
             let currentState = 'idle'; // idle, question, answered
             
@@ -741,49 +759,36 @@
                     $('#review-history-content').html('<p class="text-muted">No questions answered yet. Start practicing!</p>');
                     return;
                 }
-<<<<<<< HEAD
-                
                 $.each(history, function(index, item) {
                     var isCorrect = item.user_answer === item.correct_answer;
-                    var historyHtml = `
-                        <div class="history-item">
-                            <div class="question-text">${item.question}</div>
-                            <div class="mt-3">
-                                <strong>Your Answer:</strong> 
-                                <span class="badge ${isCorrect ? 'bg-success' : 'bg-danger'}">${item.user_answer}</span>
-                                <strong>Correct Answer:</strong> 
-                                <span class="badge bg-primary">${item.correct_answer}</span>
-                            </div>
-=======
-                $.each(history, function(index, item) {
-                    var isCorrect = item.user_answer === item.correct_answer;
-                    // Render all options with indication of user/correct
-                    var optionsHtml = '';
+                    // Render choices with labels
+                    var choicesHtml = '';
                     if (item.choices && item.choices.length === 4) {
-                        optionsHtml += '<div class="mb-2"><strong>Options:</strong></div>';
-                        optionsHtml += '<ul class="list-group mb-2">';
+                        choicesHtml = '<div class="mb-2">';
                         item.choices.forEach(function(choice) {
                             var match = choice.match(/^Option ([A-D]):\s*(.*)$/);
                             if (match) {
                                 var letter = match[1];
                                 var text = match[2];
-                                var classes = 'list-group-item';
-                                if (letter === item.correct_answer) classes += ' list-group-item-success';
-                                else if (letter === item.user_answer && item.user_answer !== item.correct_answer) classes += ' list-group-item-danger';
-                                var label = '';
-                                if (letter === item.user_answer && letter === item.correct_answer) label = ' <span class="badge bg-success ms-2">Your Answer (Correct)</span>';
-                                else if (letter === item.user_answer) label = ' <span class="badge bg-danger ms-2">Your Answer</span>';
-                                else if (letter === item.correct_answer) label = ' <span class="badge bg-primary ms-2">Correct Answer</span>';
-                                optionsHtml += `<li class="${classes}"><strong>${letter}.</strong> ${text}${label}</li>`;
+                                var badgeClass = '';
+                                if (letter === item.correct_answer) badgeClass = 'bg-success';
+                                else if (letter === item.user_answer && item.user_answer !== item.correct_answer) badgeClass = 'bg-danger';
+                                else badgeClass = 'bg-secondary';
+                                choicesHtml += `<span class="badge review-choice-badge ${badgeClass} me-2">${letter}: ${text}</span>`;
                             }
                         });
-                        optionsHtml += '</ul>';
+                        choicesHtml += '</div>';
                     }
                     var historyHtml = `
                         <div class="history-item">
                             <div class="question-text">${item.question}</div>
-                            ${optionsHtml}
->>>>>>> 3ae2396 (new updates)
+                            ${choicesHtml}
+                            <div class="mt-2">
+                                <strong>Your Answer:</strong> 
+                                <span class="badge ${isCorrect ? 'bg-success' : 'bg-danger'}">${item.user_answer}</span>
+                                <strong>Correct Answer:</strong> 
+                                <span class="badge bg-primary">${item.correct_answer}</span>
+                            </div>
                             <div class="mt-2">
                                 <strong>Feedback:</strong> ${item.feedback}
                             </div>
@@ -793,13 +798,6 @@
                 });
             }
 
-<<<<<<< HEAD
-            // Option selection
-            $(document).on('click', '.option-item', function() {
-                $('.option-item').removeClass('selected');
-                $(this).addClass('selected');
-                $(this).find('input[type="radio"]').prop('checked', true);
-=======
             // Option selection (mouse and keyboard accessible)
             $(document).on('click', '.option-item', function() {
                 $('.option-item').removeClass('selected');
@@ -819,8 +817,35 @@
             });
             $(document).on('mouseleave', '.option-item', function() {
                 $(this).removeAttr('tabindex');
->>>>>>> 3ae2396 (new updates)
             });
+            // Show theme toggle only on Home page
+            function showThemeToggleOnHome() {
+                if ($('#home-page').is(':visible')) {
+                    $('#theme-toggle').show();
+                } else {
+                    $('#theme-toggle').hide();
+                }
+            }
+
+            // Enable/disable Start Practice button based on category selection
+            $('#category-dropdown').on('change', function() {
+                if ($(this).val()) {
+                    $('#start-practice-btn').prop('disabled', false);
+                } else {
+                    $('#start-practice-btn').prop('disabled', true);
+                }
+            });
+
+            // Reset Start Practice button and dropdown on home navigation
+            function resetCategorySelection() {
+                $('#category-dropdown').val('');
+                $('#start-practice-btn').prop('disabled', true);
+            }
+            $('#back-to-home-btn, #back-to-home-btn-2, #back-to-home-btn-3').on('click', resetCategorySelection);
+
+            // Show/hide theme toggle on navigation
+            $('#back-to-home-btn, #back-to-home-btn-2, #back-to-home-btn-3, #start-practice-btn').on('click', showThemeToggleOnHome);
+            $(document).ready(showThemeToggleOnHome);
 
             // Submit answer
             $('#submit-answer-btn').on('click', function() {
@@ -886,10 +911,6 @@
                 $('#practice-section').addClass('hidden');
                 $('#history-section').addClass('hidden');
                 $('#flashcards-section').addClass('hidden');
-<<<<<<< HEAD
-=======
-                showThemeToggleOnHome();
->>>>>>> 3ae2396 (new updates)
             });
 
             // Back to home from history
@@ -898,10 +919,6 @@
                 $('#practice-section').addClass('hidden');
                 $('#history-section').addClass('hidden');
                 $('#flashcards-section').addClass('hidden');
-<<<<<<< HEAD
-=======
-                showThemeToggleOnHome();
->>>>>>> 3ae2396 (new updates)
             });
 
             // Back to home from flashcards
@@ -910,19 +927,6 @@
                 $('#practice-section').addClass('hidden');
                 $('#history-section').addClass('hidden');
                 $('#flashcards-section').addClass('hidden');
-<<<<<<< HEAD
-=======
-                showThemeToggleOnHome();
-            });
-
-            // Enable/disable Start Practice button based on category selection
-            $('#category-dropdown').on('change', function() {
-                if ($(this).val()) {
-                    $('#start-practice-btn').prop('disabled', false);
-                } else {
-                    $('#start-practice-btn').prop('disabled', true);
-                }
->>>>>>> 3ae2396 (new updates)
             });
 
             // Start practice
@@ -930,13 +934,7 @@
                 var $btn = $(this);
                 var originalText = $btn.text();
                 var selectedCategory = $('#category-dropdown').val();
-<<<<<<< HEAD
-                
                 showLoading($btn, 'Loading Practice...');
-
-=======
-                showLoading($btn, 'Loading Practice...');
->>>>>>> 3ae2396 (new updates)
                 $.ajax({
                     url: '/new_question',
                     type: 'POST',
@@ -951,10 +949,7 @@
                             $('#practice-section').removeClass('hidden');
                             $('#history-section').addClass('hidden');
                             $('#flashcards-section').addClass('hidden');
-<<<<<<< HEAD
-=======
                             showThemeToggleOnHome();
->>>>>>> 3ae2396 (new updates)
                         }
                     },
                     error: function(xhr, status, error) {
@@ -966,16 +961,6 @@
                 });
             });
 
-<<<<<<< HEAD
-=======
-            // Reset Start Practice button and dropdown on home navigation
-            function resetCategorySelection() {
-                $('#category-dropdown').val('');
-                $('#start-practice-btn').prop('disabled', true);
-            }
-            $('#back-to-home-btn, #back-to-home-btn-2, #back-to-home-btn-3').on('click', resetCategorySelection);
-
->>>>>>> 3ae2396 (new updates)
             // Start flashcards
             $('#start-flashcards-btn').on('click', function() {
                 var $btn = $(this);
@@ -1070,11 +1055,7 @@
             $('#practice-section').addClass('hidden');
             $('#history-section').addClass('hidden');
             $('#flashcards-section').addClass('hidden');
-<<<<<<< HEAD
             
-=======
-            showThemeToggleOnHome();
->>>>>>> 3ae2396 (new updates)
             // If there's an existing question, store it but don't show it automatically
             if (initialQuizState.question) {
                 // Store the state for when user chooses to practice
@@ -1171,13 +1152,8 @@
     </script>
 </head>
 <body>
-<<<<<<< HEAD
-    <!-- Theme Toggle Button -->
-    <button id="theme-toggle" class="theme-toggle">
-=======
     <!-- Theme Toggle Button (only on Home page) -->
     <button id="theme-toggle" class="theme-toggle" style="display:none;">
->>>>>>> 3ae2396 (new updates)
         <i id="theme-toggle-icon" class="fas fa-moon"></i>
     </button>
 
@@ -1191,21 +1167,6 @@
         <div class="content-area">
             <!-- Home Page -->
             <div id="home-page">
-<<<<<<< HEAD
-                <div class="row">
-                    <div class="col-md-4 mb-4">
-                        <div class="card h-100 feature-card" id="practice-card">
-                            <div class="card-body text-center">
-                                <i class="fas fa-brain fa-3x mb-3 text-primary"></i>
-                                <h5 class="card-title">Practice Questions</h5>
-                                <p class="card-text">Generate new Brain Bee style questions and test your knowledge across different neuroscience categories.</p>
-                                <button class="btn btn-primary" id="start-practice-btn">
-                                    <i class="fas fa-play"></i> Start Practice
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-=======
                 <!-- Category Selection (moved to Home) -->
                 <div class="card mb-4">
                     <div class="card-header">
@@ -1230,9 +1191,9 @@
                         </button>
                     </div>
                 </div>
-                <div class="row justify-content-center">
->>>>>>> 3ae2396 (new updates)
-                    <div class="col-md-4 mb-4">
+                <div class="feature-row-outer">
+                  <div class="feature-row">
+                    <div class="mb-4">
                         <div class="card h-100 feature-card" id="history-card">
                             <div class="card-body text-center">
                                 <i class="fas fa-history fa-3x mb-3 text-info"></i>
@@ -1244,7 +1205,7 @@
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-4 mb-4">
+                    <div class="mb-4">
                         <div class="card h-100 feature-card" id="flashcards-card">
                             <div class="card-body text-center">
                                 <i class="fas fa-clone fa-3x mb-3 text-secondary"></i>
@@ -1256,14 +1217,14 @@
                             </div>
                         </div>
                     </div>
+                  </div>
                 </div>
-<<<<<<< HEAD
-=======
-                <!-- Clear Session Button (moved to Home, bottom right) -->
-                <button class="btn btn-warning position-fixed" id="clear-session-btn" style="bottom: 30px; right: 30px; z-index: 1050;">
-                    <i class="fas fa-trash"></i> Clear Session
-                </button>
->>>>>>> 3ae2396 (new updates)
+                <!-- Clear Session Button (only on Home) -->
+                <div class="d-flex justify-content-end mt-3">
+                    <button class="btn btn-warning" id="clear-session-btn">
+                        <i class="fas fa-trash"></i> Clear Session
+                    </button>
+                </div>
             </div>
 
             <!-- Practice Section -->
@@ -1274,43 +1235,12 @@
                         <i class="fas fa-home"></i> Back to Home
                     </button>
                 </div>
-<<<<<<< HEAD
 
-                <!-- Category Selection -->
-                <div class="card">
-                    <div class="card-header">
-                        <i class="fas fa-list"></i> Select Category
-                    </div>
-                    <div class="card-body">
-                        <select class="form-select" id="category-dropdown">
-                            <option value="Sensory system">Sensory system</option>
-                            <option value="Neurology (Diseases of the Brain)">Neurology (Diseases of the Brain)</option>
-                            <option value="Neuroanatomy">Neuroanatomy</option>
-                            <option value="Neural communication (electrical and chemical)">Neural communication (electrical and chemical)</option>
-                            <option value="Motor system">Motor system</option>
-                            <option value="Higher cognition">Higher cognition</option>
-                            <option value="Development of the nervous system">Development of the nervous system</option>
-                            <option value="Cellular organization of the nervous system">Cellular organization of the nervous system</option>
-                        </select>
-                    </div>
-                </div>
-
-=======
->>>>>>> 3ae2396 (new updates)
-                <!-- Button Group -->
+                <!-- Button Group (no Clear Session here) -->
                 <div class="button-group">
                     <button class="btn btn-primary" id="new-question-btn">
                         <i class="fas fa-plus"></i> New Question
                     </button>
-                    <button class="btn btn-success hidden" id="submit-answer-btn">
-                        <i class="fas fa-check"></i> Submit Answer
-                    </button>
-<<<<<<< HEAD
-                    <button class="btn btn-warning" id="clear-session-btn">
-                        <i class="fas fa-trash"></i> Clear Session
-                    </button>
-=======
->>>>>>> 3ae2396 (new updates)
                 </div>
 
                 <!-- Stats Container -->
@@ -1320,14 +1250,9 @@
                 <div id="question-container" class="question-container hidden">
                     <div class="question-text" id="question-text"></div>
                     <div class="options-container" id="options-container"></div>
-<<<<<<< HEAD
-=======
-                    <div class="d-flex justify-content-center mt-3">
-                        <button class="btn btn-success hidden" id="submit-answer-btn">
-                            <i class="fas fa-check"></i> Submit Answer
-                        </button>
-                    </div>
->>>>>>> 3ae2396 (new updates)
+                    <button class="btn btn-success hidden mt-3" id="submit-answer-btn" style="width:100%;">
+                        <i class="fas fa-check"></i> Submit Answer
+                    </button>
                 </div>
 
                 <!-- Feedback Container -->
@@ -1344,12 +1269,14 @@
                         <i class="fas fa-home"></i> Back to Home
                     </button>
                 </div>
-                <div class="card">
-                    <div class="card-header">
-                        <i class="fas fa-history"></i> Question History
-                    </div>
-                    <div class="card-body">
-                        <div id="review-history-content"></div>
+                <div class="centered-section">
+                    <div class="card" style="min-width: 400px; max-width: 700px; width: 100%;">
+                        <div class="card-header">
+                            <i class="fas fa-history"></i> Question History
+                        </div>
+                        <div class="card-body">
+                            <div id="review-history-content"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1362,19 +1289,21 @@
                         <i class="fas fa-home"></i> Back to Home
                     </button>
                 </div>
-                <div class="card">
-                    <div class="card-header">
-                        <i class="fas fa-clone"></i> Flashcards Review
-                    </div>
-                    <div class="card-body">
-                        <div id="flashcard-question" class="question-text mb-3"></div>
-                        <div id="flashcard-choices" class="mb-3"></div>
-                        <button class="btn btn-info mb-3" id="show-flashcard-answer-btn">Show Answer</button>
-                        <div id="flashcard-answer" class="mb-3" style="display:none;"></div>
-                        <div class="d-flex justify-content-between">
-                            <button class="btn btn-outline-primary" id="flashcard-prev-btn">Previous</button>
-                            <span id="flashcard-progress" class="align-self-center text-muted"></span>
-                            <button class="btn btn-outline-primary" id="flashcard-next-btn">Next</button>
+                <div class="centered-section">
+                    <div class="card" style="min-width: 400px; max-width: 700px; width: 100%;">
+                        <div class="card-header">
+                            <i class="fas fa-clone"></i> Flashcards Review
+                        </div>
+                        <div class="card-body">
+                            <div id="flashcard-question" class="question-text mb-3"></div>
+                            <div id="flashcard-choices" class="mb-3"></div>
+                            <button class="btn btn-info mb-3" id="show-flashcard-answer-btn">Show Answer</button>
+                            <div id="flashcard-answer" class="mb-3" style="display:none;"></div>
+                            <div class="d-flex justify-content-between">
+                                <button class="btn btn-outline-primary" id="flashcard-prev-btn">Previous</button>
+                                <span id="flashcard-progress" class="align-self-center text-muted"></span>
+                                <button class="btn btn-outline-primary" id="flashcard-next-btn">Next</button>
+                            </div>
                         </div>
                     </div>
                 </div>

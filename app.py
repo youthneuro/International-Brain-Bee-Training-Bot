@@ -11,6 +11,9 @@ import hashlib
 from typing import List, Optional
 from datetime import datetime, timedelta
 
+# Import Supabase fallback utility
+from supabase_question_utils import get_random_supabase_question
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -359,21 +362,17 @@ def get_storage_status():
 def get_brain_bee_question(category, retry_count=0):
     """Generate Brain Bee question using structured outputs for consistent JSON format."""
     
-    # Use RAG for intelligent content selection
+
+    # Use simple, reliable content selection
     try:
-        from rag_system import get_brain_bee_question_rag
-        relevant_content = get_brain_bee_question_rag(category)
+        from simple_fallback import get_brain_bee_question_simple
+        relevant_content = get_brain_bee_question_simple(category)
     except Exception as e:
-        # Fallback to simple selection if RAG fails
-        try:
-            from simple_fallback import get_brain_bee_question_simple
-            relevant_content = get_brain_bee_question_simple(category)
-        except Exception as e2:
-            # Ultimate fallback
-            filename = category + ".txt"
-            with open(filename, 'r', encoding="utf-8") as file:
-                information = file.read()
-            relevant_content = information[:8000]
+        # Ultimate fallback
+        filename = category + ".txt"
+        with open(filename, 'r', encoding="utf-8") as file:
+            information = file.read()
+        relevant_content = information[:8000]
 
     system_prompt = f"""You are a neuroscience expert creating Brain Bee competition questions. 
     
@@ -392,26 +391,25 @@ The question should be at Brain Bee competition level difficulty."""
 
 Generate a challenging question with exactly 4 options (A, B, C, D) and randomly select the correct answer."""
 
-    # Use regular completion instead of structured outputs
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=0.8,
-        top_p=0.9,
-    )
-    
-    response_text = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
-    
-    # Parse the response manually
     try:
+        # Use regular completion instead of structured outputs
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.8,
+            top_p=0.9,
+        )
+        response_text = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
+
+        # Parse the response manually
         lines = response_text.split('\n')
         question = ""
         choices = []
         correct_answer = ""
-        
+
         for line in lines:
             line = line.strip()
             if line.startswith("Question:"):
@@ -426,16 +424,29 @@ Generate a challenging question with exactly 4 options (A, B, C, D) and randomly
                 choices.append(line)
             elif line.startswith("Correct Answer:"):
                 correct_answer = line.replace("Correct Answer:", "").strip()
-        
+
         if question and choices and correct_answer:
             return (question, choices, correct_answer, "")
         else:
             # Fallback if parsing fails
             return get_brain_bee_question_fallback(category, relevant_content)
-            
+
     except Exception as e:
-        app.logger.error(f"Response parsing failed: {e}")
-        return get_brain_bee_question_fallback(category, relevant_content)
+        # Check for OpenAI rate limit or API error, fallback to Supabase
+        app.logger.warning(f"OpenAI API failed: {e}. Attempting Supabase fallback.")
+        from flask import current_app
+        try:
+            # Use Supabase fallback utility
+            question_tuple = get_random_supabase_question(supabase, category)
+            if question_tuple:
+                current_app.logger.info("Served question from Supabase fallback.")
+                return question_tuple
+            else:
+                current_app.logger.error("No Supabase question available for category '%s'", category)
+                return ("No question available.", ["A", "B", "C", "D"], "A", "")
+        except Exception as supabase_error:
+            current_app.logger.error(f"Supabase fallback failed: {supabase_error}")
+            return ("No question available.", ["A", "B", "C", "D"], "A", "")
 
 def get_brain_bee_question_fallback(category, relevant_content):
     """Fallback method using traditional completion if structured outputs fail."""
@@ -497,25 +508,20 @@ def get_brain_bee_question_fallback(category, relevant_content):
 def generate_explanation(question, choices, correct_answer, category=None):
     """Generate an explanation for why the correct answer is right when user answers incorrectly."""
     
-    # Get relevant neuroscience content for the category using RAG
+    # Get relevant neuroscience content for the category
     relevant_content = ""
     if category:
         try:
-            from rag_system import get_brain_bee_question_rag
-            relevant_content = get_brain_bee_question_rag(category)
+            from simple_fallback import get_brain_bee_question_simple
+            relevant_content = get_brain_bee_question_simple(category)
         except Exception as e:
-            # Fallback to simple selection if RAG fails
+            # Fallback to basic content
             try:
-                from simple_fallback import get_brain_bee_question_simple
-                relevant_content = get_brain_bee_question_simple(category)
-            except Exception as e2:
-                # Fallback to basic content
-                try:
-                    filename = category + ".txt"
-                    with open(filename, 'r', encoding="utf-8") as file:
-                        relevant_content = file.read()[:4000]  # Use less content for explanation
-                except:
-                    relevant_content = ""
+                filename = category + ".txt"
+                with open(filename, 'r', encoding="utf-8") as file:
+                    relevant_content = file.read()[:4000]  # Use less content for explanation
+            except:
+                relevant_content = ""
     
     explanation_prompt = (
         f"You are explaining why a specific answer is correct for a neuroscience question. "
@@ -774,59 +780,13 @@ def update():
 
     return jsonify({'feedback': feedback, 'correct_answer': quiz_state.get('correct_answer')})
 
-<<<<<<< HEAD
-=======
-
-# === Helper: Fetch a random question from Supabase if available ===
-def get_random_supabase_question(category):
-    if not supabase:
-        return None
-    try:
-        # Assume you have a table or storage bucket named 'questions' with fields: question, choices, correct_answer, category
-        # This example assumes a table. Adjust if you use storage bucket.
-        response = supabase.table('questions').select('*').eq('category', category).execute()
-        questions = response.data if hasattr(response, 'data') else response
-        if questions and len(questions) > 0:
-            import random
-            q = random.choice(questions)
-            # Ensure choices is a list
-            choices = q['choices'] if isinstance(q['choices'], list) else json.loads(q['choices'])
-            return q['question'], choices, q['correct_answer'], q.get('explanation', '')
-        return None
-    except Exception as e:
-        app.logger.error(f"Failed to fetch question from Supabase: {e}")
-        return None
-
-def is_openai_rate_limited(e):
-    # Check for OpenAI rate limit error
-    msg = str(e).lower()
-    return 'rate limit' in msg or '429' in msg or 'quota' in msg
-
->>>>>>> 3ae2396 (new updates)
 @app.route("/new_question", methods=['POST'])
 def new_question():
     category = request.form.get("category")
     if not category:
         return jsonify({"error": "No category provided"}), 400
 
-<<<<<<< HEAD
     question, choices, correct_answer, explanation = get_brain_bee_question(category)
-=======
-    try:
-        question, choices, correct_answer, explanation = get_brain_bee_question(category)
-    except Exception as e:
-        # If rate limit or quota error, fallback to Supabase
-        if is_openai_rate_limited(e):
-            app.logger.warning("OpenAI rate limit hit, using Supabase fallback.")
-            fallback = get_random_supabase_question(category)
-            if fallback:
-                question, choices, correct_answer, explanation = fallback
-            else:
-                return jsonify({"error": "Rate limit reached and no backup questions available."}), 429
-        else:
-            app.logger.error(f"Failed to generate question: {e}")
-            return jsonify({"error": "Failed to generate question."}), 500
->>>>>>> 3ae2396 (new updates)
 
     # Get existing history from persistent storage
     existing_data = get_user_session_data()
